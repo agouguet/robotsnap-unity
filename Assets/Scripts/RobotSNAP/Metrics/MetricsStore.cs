@@ -27,6 +27,16 @@ namespace RobotSNAP.Metrics
         private readonly List<EpisodeMetrics> _episodes = new();
         private int _sequence;
 
+        // The archive the session's trajectories are read from, and a one-entry cache of the last episode
+        // read out of it. The Analysis tab asks for an episode's tracks once per frame per drawn agent, and a
+        // read is a seek plus a decode: keeping the last one means a redraw of the same run pays for it once.
+        private TrajectoryArchive _archive;
+        private EpisodeMetrics _cachedTrackEpisode;
+        private IReadOnlyDictionary<string, List<double[]>> _cachedTracks;
+
+        private static readonly IReadOnlyDictionary<string, List<double[]>> NoTracks =
+            new Dictionary<string, List<double[]>>();
+
         private MetricsStore()
         {
             StartSession();
@@ -46,6 +56,58 @@ namespace RobotSNAP.Metrics
 
         /// <summary>Number of episodes the current session holds.</summary>
         public int Count => _episodes.Count;
+
+        /// <summary>The archive the session appends to and reads from, or null before one is installed.</summary>
+        public TrajectoryArchive Archive => _archive;
+
+        /// <summary>
+        /// Points the session at the archive under <paramref name="root"/>. The exporter calls this with the
+        /// folder it just wrote to, so a reader that follows the store follows the export wherever it landed.
+        ///
+        /// The archive is reused while the folder stays the same, because it remembers which sessions it has
+        /// already announced: a recorder that exports after every episode must not append the session line
+        /// again each time it passes the same folder.
+        /// </summary>
+        public void UseArchive(string root)
+        {
+            if (!string.IsNullOrEmpty(root) && _archive != null &&
+                string.Equals(_archive.Root, root, StringComparison.Ordinal))
+                return;
+
+            _archive = string.IsNullOrEmpty(root) ? null : new TrajectoryArchive(root);
+            _cachedTrackEpisode = null;
+            _cachedTracks = null;
+        }
+
+        /// <summary>
+        /// The tracks of one episode, keyed by agent id, whichever copy holds them: the inline map while the
+        /// episode has not been archived, and otherwise the record the archive holds. An episode with neither
+        /// reads as an empty map, never null and never a throw, because the interface asks this every frame.
+        /// </summary>
+        public IReadOnlyDictionary<string, List<double[]>> TracksOf(EpisodeMetrics episode)
+        {
+            if (episode == null)
+                return NoTracks;
+
+            if (episode.Trajectories != null && episode.Trajectories.Count > 0)
+                return episode.Trajectories;
+
+            if (episode.TrajectoryRef == null)
+                return NoTracks;
+
+            if (ReferenceEquals(_cachedTrackEpisode, episode) && _cachedTracks != null)
+                return _cachedTracks;
+
+            // An episode carrying a reference but no installed archive is one exported by a previous call in
+            // this process; the default folder is where that export would have gone without a named root.
+            TrajectoryArchive archive = _archive ??= new TrajectoryArchive(MetricsExporter.DefaultRoot);
+            if (!archive.TryRead(episode.TrajectoryRef, out Dictionary<string, List<double[]>> tracks))
+                return NoTracks;
+
+            _cachedTrackEpisode = episode;
+            _cachedTracks = tracks;
+            return tracks;
+        }
 
         /// <summary>Appends one finished episode. Returns it, so a caller can chain the export.</summary>
         public EpisodeMetrics Add(EpisodeMetrics episode)

@@ -249,11 +249,12 @@ public static class AnalysisTrackReader
     /// </summary>
     public static AnalysisPrefixMetrics Metrics(EpisodeMetrics episode, double relativeSeconds)
     {
-        if (episode?.Trajectories == null)
+        if (episode == null)
             return default;
 
+        IReadOnlyDictionary<string, List<double[]>> tracks = MetricsStore.Instance.TracksOf(episode);
         string robotKey = MetricsContract.RobotTrackKey(episode.Robot);
-        if (!episode.Trajectories.TryGetValue(robotKey, out List<double[]> robot) || robot == null)
+        if (!tracks.TryGetValue(robotKey, out List<double[]> robot) || robot == null)
             return default;
 
         double start = FirstSeconds(robot);
@@ -272,7 +273,7 @@ public static class AnalysisTrackReader
         // key, so a second robot must never be measured against as if it were a person - that would make the
         // prefix disagree with the recorder, which never counted a robot as a human either.
         var humans = new List<IReadOnlyList<double[]>>();
-        foreach (KeyValuePair<string, List<double[]>> track in episode.Trajectories)
+        foreach (KeyValuePair<string, List<double[]>> track in tracks)
         {
             if (!IsHumanKey(track.Key) || track.Value == null || track.Value.Count == 0)
                 continue;

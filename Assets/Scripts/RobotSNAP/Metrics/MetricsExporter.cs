@@ -1,49 +1,64 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace RobotSNAP.Metrics
 {
-    /// <summary>Where an export landed, so a caller - a log line, a router answer - can name the files.</summary>
+    /// <summary>
+    /// Where an export landed, so a caller - a log line, a router answer - can name the files.
+    ///
+    /// The legacy <see cref="SessionFile"/>, <see cref="CsvFile"/> and <see cref="IndexFile"/> fields are
+    /// kept for callers written against the whole-session export, and the new fields name what an append-only
+    /// export actually writes.
+    /// </summary>
     public readonly struct MetricsExportReport
     {
         public readonly string Directory;
         public readonly string SessionFile;
         public readonly string CsvFile;
         public readonly string IndexFile;
+        public readonly string SessionsFile;
+        public readonly string CatalogueFile;
+        public readonly string TrajectoriesFolder;
 
-        public MetricsExportReport(string directory, string sessionFile, string csvFile, string indexFile)
+        public MetricsExportReport(
+            string directory,
+            string sessionFile,
+            string csvFile,
+            string indexFile,
+            string sessionsFile = null,
+            string catalogueFile = null,
+            string trajectoriesFolder = null)
         {
             Directory = directory;
             SessionFile = sessionFile;
             CsvFile = csvFile;
             IndexFile = indexFile;
+            SessionsFile = sessionsFile;
+            CatalogueFile = catalogueFile;
+            TrajectoriesFolder = trajectoriesFolder;
         }
     }
 
     /// <summary>
-    /// Writes a session to disk under <c>StreamingAssets/metrics/</c>, in a format Python reads without Unity
-    /// and a human reads without Python:
+    /// Appends a session to disk under <c>StreamingAssets/metrics/</c>, in a format Python reads without
+    /// Unity and a human reads without Python:
     ///
-    ///   <c>metrics_index.json</c>              one entry per session this machine ever exported, newest last,
-    ///                                          each naming the session file and the CSV that go with it
-    ///   <c>session_&lt;id&gt;.json</c>             every episode of one session, trajectories included
-    ///   <c>session_&lt;id&gt;.csv</c>              the same episodes as a table, trajectories left out
+    ///   <c>sessions.jsonl</c>                  one line per session, written the first time it is exported
+    ///   <c>catalogue.jsonl</c>                 one line per finished episode, written once and never rewritten
+    ///   <c>trajectories/&lt;session&gt;.rbt</c>   the binary record of each episode's trajectories
     ///
-    /// One file per session rather than one per episode, and one flat folder: a training session runs hundreds
-    /// of episodes, and a folder holding hundreds of files is a folder nobody can list. The session file is
-    /// rewritten whole after every finished episode, so the file on disk is always the session as it stands;
-    /// the last rewrite of a session is therefore also its final record, and a reader that opens it mid-run
-    /// sees complete episodes only, never a half-written one - the write goes through a temporary file and a
-    /// move, so a reader never observes a truncated document either.
+    /// The whole-session file this replaced was rewritten after every finished episode, so a ten-thousand
+    /// episode run rewrote tens of terabytes and kept the session in RAM to do it. An append touches only the
+    /// episode that just finished, and the episode's map leaves memory the moment the archive holds it: the
+    /// store keeps summaries, and a reader that needs a trajectory seeks to it through its catalogue line.
     ///
     /// None of this throws: an export that fails - a read-only folder, a full disk - is reported through the
     /// returned report being empty and through the exception message in <c>LastError</c>, because an episode
-    /// that has already been recorded and published must not be lost to a file system problem.
+    /// that has already been recorded and published must not be lost to a file system problem. A trajectory
+    /// that cannot be archived is not lost either: its catalogue line then carries the map in clear, which is
+    /// the one case a reader needs the inline copy.
     /// </summary>
     public static class MetricsExporter
     {
@@ -55,26 +70,19 @@ namespace RobotSNAP.Metrics
             => Path.Combine(Application.streamingAssetsPath, MetricsContract.ExportFolder);
 
         /// <summary>
-        /// Exports the store's current session and updates the index. <paramref name="root"/> overrides the
-        /// folder, which is how a test writes to a temporary directory instead of the project.
+        /// Appends every episode the session has not archived yet: a session line the first time, then one
+        /// catalogue line and one trajectory record each. <paramref name="root"/> overrides the folder, which
+        /// is how a test writes to a temporary directory instead of the project.
         /// </summary>
         public static MetricsExportReport Export(MetricsStore store, string root = null)
         {
             if (store == null) return default;
 
             string directory = string.IsNullOrEmpty(root) ? DefaultRoot : root;
-            string sessionFile = Path.Combine(directory, MetricsContract.SessionFileName(store.SessionId));
-            string csvFile = Path.Combine(directory, MetricsContract.SessionCsvFileName(store.SessionId));
-            string indexFile = Path.Combine(directory, MetricsContract.IndexFileName);
 
             try
             {
                 Directory.CreateDirectory(directory);
-                WriteAtomic(sessionFile, store.ToSessionJson());
-                WriteAtomic(csvFile, store.ToCsv());
-                WriteAtomic(indexFile, MergeIndex(indexFile, store));
-                LastError = null;
-                return new MetricsExportReport(directory, sessionFile, csvFile, indexFile);
             }
             catch (Exception exception)
             {
@@ -82,6 +90,71 @@ namespace RobotSNAP.Metrics
                 Debug.LogWarning($"[MetricsExporter] export to '{directory}' failed: {exception.Message}");
                 return default;
             }
+
+            store.UseArchive(directory);
+            TrajectoryArchive archive = store.Archive;
+            if (archive == null)
+            {
+                LastError = "no archive";
+                return default;
+            }
+
+            // "failure" records the first thing that went wrong, whether or not it could be worked around,
+            // because LastError is what a caller reports. "fatal" is only what makes the export itself not
+            // have happened - a root nothing could be written to. A trajectory the archive refused is not
+            // fatal: its catalogue line carries the map in clear, which is the whole point of the fallback.
+            string failure = null;
+            string fatal = null;
+
+            archive.EnsureSessionLine(store.SessionId, store.StartedAt);
+            if (archive.LastError != null)
+            {
+                failure ??= archive.LastError;
+                fatal ??= archive.LastError;
+            }
+
+            foreach (EpisodeMetrics episode in store.Episodes)
+            {
+                // An episode already carrying a reference is on disk: re-exporting a session appends the new
+                // episodes only, so the cost of a session stays linear in its episodes.
+                if (episode == null || episode.TrajectoryRef != null)
+                    continue;
+
+                TrajectoryRef reference = archive.Append(episode);
+                if (reference == null)
+                    failure ??= archive.LastError;
+
+                episode.TrajectoryRef = reference;
+                archive.AppendCatalogue(episode);
+
+                if (archive.LastError != null)
+                {
+                    // The line is what makes the record findable, so a record whose line did not land is not
+                    // an archive: the reference is taken back and the episode stays in RAM to be retried.
+                    failure ??= archive.LastError;
+                    fatal ??= archive.LastError;
+                    episode.TrajectoryRef = null;
+                    continue;
+                }
+
+                // The archive holds the points now, so the RAM copy is redundant. A failure above leaves the
+                // map in place instead: it is then the only copy, and it is what the line carries in clear.
+                if (reference != null && episode.Trajectories != null)
+                    episode.Trajectories.Clear();
+            }
+
+            LastError = failure;
+            if (fatal != null)
+                return default;
+
+            return new MetricsExportReport(
+                directory,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                Path.Combine(directory, TrajectoryArchive.SessionsFileName),
+                Path.Combine(directory, TrajectoryArchive.CatalogueFileName),
+                Path.Combine(directory, TrajectoryArchive.TrajectoriesFolderName));
         }
 
         /// <summary>
@@ -118,57 +191,6 @@ namespace RobotSNAP.Metrics
                 Debug.LogWarning($"[MetricsExporter] export of '{episodeId}' to '{directory}' failed: {exception.Message}");
                 return default;
             }
-        }
-
-        /// <summary>
-        /// Reads the index, replaces the entry of this session and returns the document. The file is the only
-        /// record of the sessions a machine exported, so a session exported twice - the store grows after every
-        /// episode - updates its own entry instead of appearing twice.
-        /// </summary>
-        private static string MergeIndex(string indexFile, MetricsStore store)
-        {
-            var sessions = new List<JObject>();
-
-            if (File.Exists(indexFile))
-            {
-                try
-                {
-                    JObject existing = JObject.Parse(File.ReadAllText(indexFile));
-                    if (existing["sessions"] is JArray entries)
-                    {
-                        foreach (JToken entry in entries)
-                        {
-                            if (entry is JObject entryObject &&
-                                (string)entryObject["id"] != store.SessionId)
-                            {
-                                sessions.Add(entryObject);
-                            }
-                        }
-                    }
-                }
-                catch (Exception)
-                {
-                    // An index a previous version wrote in another shape is rebuilt rather than allowed to stop
-                    // an export: the session files are the record, the index is only the way to find them.
-                }
-            }
-
-            sessions.Add(new JObject
-            {
-                ["id"] = store.SessionId,
-                ["started_at"] = store.StartedAt,
-                ["exported_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
-                ["episode_count"] = store.Count,
-                ["file"] = MetricsContract.SessionFileName(store.SessionId),
-                ["csv"] = MetricsContract.SessionCsvFileName(store.SessionId),
-            });
-
-            var document = new JObject
-            {
-                ["updated_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
-                ["sessions"] = new JArray(sessions),
-            };
-            return document.ToString(Formatting.Indented);
         }
 
         /// <summary>

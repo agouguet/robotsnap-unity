@@ -408,37 +408,191 @@ namespace RobotSNAP.Tests.Editor
 
         // -- export ---------------------------------------------------------
 
+        /// <summary>
+        /// The export appends instead of rewriting: a session line, a catalogue line and a trajectory record,
+        /// and none of the whole-session files. Rewriting the session after every episode is what made a
+        /// long campaign pay for its whole history on every finish.
+        /// </summary>
         [Test]
-        public void TheExportWritesASessionFileAnIndexAndACsv()
+        public void TheExportAppendsACatalogueLineAndATrajectoryRecordAndNoSessionFile()
         {
-            string root = Path.Combine(Path.GetTempPath(), "robotsnap_metrics_" + System.Guid.NewGuid().ToString("N"));
+            string root = NewExportRoot();
             try
             {
                 MetricsStore store = MetricsStore.Instance;
-                store.Add(Synthetic("ep_export"));
+                EpisodeMetrics episode = Synthetic("ep_export");
+                store.Add(episode);
 
                 MetricsExportReport report = MetricsExporter.Export(store, root);
 
-                Assert.That(File.Exists(report.SessionFile), Is.True);
-                Assert.That(File.Exists(report.CsvFile), Is.True);
-                Assert.That(File.Exists(report.IndexFile), Is.True);
+                Assert.That(report.Directory, Is.EqualTo(root));
+                Assert.That(report.SessionsFile, Is.EqualTo(Path.Combine(root, "sessions.jsonl")));
+                Assert.That(report.CatalogueFile, Is.EqualTo(Path.Combine(root, "catalogue.jsonl")));
+                Assert.That(File.Exists(report.SessionsFile), Is.True);
+                Assert.That(File.Exists(report.CatalogueFile), Is.True);
 
-                JObject index = JObject.Parse(File.ReadAllText(report.IndexFile));
-                Assert.That((string)index["sessions"][0]["id"], Is.EqualTo(store.SessionId));
+                Assert.That(episode.TrajectoryRef, Is.Not.Null, "the episode is archived");
+                string archive = Path.Combine(
+                    root,
+                    episode.TrajectoryRef.File.Replace('/', Path.DirectorySeparatorChar));
+                Assert.That(File.Exists(archive), Is.True);
+                Assert.That(episode.Trajectories, Is.Empty, "the map leaves RAM once the archive holds it");
 
-                JObject session = JObject.Parse(File.ReadAllText(report.SessionFile));
-                Assert.That((int)session["episode_count"], Is.EqualTo(1));
-                Assert.That((string)session["episodes"][0]["id"], Is.EqualTo("ep_export"));
-                Assert.That((int)session["episodes"][0]["index"], Is.EqualTo(7));
-
-                string csv = File.ReadAllText(report.CsvFile);
-                StringAssert.StartsWith("id,index,scenario,robot,started_at,outcome", csv);
-                StringAssert.Contains("ep_export,7,corridor", csv);
-                StringAssert.Contains("ep_export", csv);
+                Assert.That(
+                    File.Exists(Path.Combine(root, MetricsContract.SessionFileName(store.SessionId))),
+                    Is.False,
+                    "the whole-session JSON is no longer written");
+                Assert.That(
+                    File.Exists(Path.Combine(root, MetricsContract.SessionCsvFileName(store.SessionId))),
+                    Is.False,
+                    "the whole-session CSV is no longer written");
+                Assert.That(
+                    File.Exists(Path.Combine(root, MetricsContract.IndexFileName)),
+                    Is.False,
+                    "the index is no longer written");
             }
             finally
             {
-                if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// The catalogue is one line per finished episode, appended once and never rewritten, and the line
+        /// defers the trajectory to the archive instead of repeating it.
+        /// </summary>
+        [Test]
+        public void TheCatalogueIsAppendedLineByLineAndDefersTheTrajectoryToTheArchive()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.Add(Synthetic("ep_one"));
+                store.Add(Synthetic("ep_two"));
+
+                MetricsExporter.Export(store, root);
+                MetricsExporter.Export(store, root); // a second export must not rewrite the lines already there
+
+                string[] lines = File.ReadAllLines(Path.Combine(root, "catalogue.jsonl"));
+                Assert.That(lines.Length, Is.EqualTo(2), "one line per episode, appended once");
+
+                var first = JObject.Parse(lines[0]);
+                var second = JObject.Parse(lines[1]);
+                Assert.That((string)first["id"], Is.EqualTo("ep_one"));
+                Assert.That(first["trajectories"], Is.Null, "the archived map is not repeated in the line");
+                Assert.That((string)first["trajectory_ref"]["file"], Is.EqualTo("trajectories/s_test.rbt"),
+                    "the reference is relative to the export root");
+                Assert.That((string)first["trajectory_ref"]["encoding"], Is.EqualTo("int16mm"));
+                Assert.That((int)first["trajectory_ref"]["agents"], Is.EqualTo(1));
+                Assert.That((long)first["trajectory_ref"]["length"], Is.GreaterThan(0));
+                Assert.That((long)second["trajectory_ref"]["offset"],
+                    Is.GreaterThan((long)first["trajectory_ref"]["offset"]),
+                    "the second record follows the first in the same file");
+
+                string[] sessions = File.ReadAllLines(Path.Combine(root, "sessions.jsonl"));
+                Assert.That(sessions.Length, Is.EqualTo(1), "a session is announced once, not once per export");
+                var session = JObject.Parse(sessions[0]);
+                Assert.That((string)session["id"], Is.EqualTo(store.SessionId));
+                Assert.That((int)session["schema"], Is.EqualTo(1));
+                Assert.That(session["started_at"], Is.Not.Null);
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// The archive round-trips every agent of an episode after the trajectory buffer subsampled far more
+        /// samples than its capacity, which is the shape a long run really produces.
+        /// </summary>
+        [Test]
+        public void TheArchiveRoundTripsEveryAgentAtMillimetreAndMillisecondPrecision()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                var robot = new TrajectoryBuffer(8);
+                var human = new TrajectoryBuffer(8);
+                for (int step = 0; step < 200; step++)
+                {
+                    robot.Add(step * 0.02, step * 0.05, System.Math.Sin(step * 0.1));
+                    human.Add(step * 0.02, 2.0 - step * 0.01, 1.5);
+                }
+
+                EpisodeMetrics episode = TrajectoryEpisode("s_roundtrip", "ep_roundtrip");
+                episode.TrajectoryStride = robot.Stride;
+                episode.Trajectories["robot_1"] = new List<double[]>(robot.Points);
+                episode.Trajectories["human_3"] = new List<double[]>(human.Points);
+
+                var archive = new TrajectoryArchive(root);
+                TrajectoryRef reference = archive.Append(episode);
+
+                Assert.That(reference, Is.Not.Null, archive.LastError);
+                Assert.That(reference.File, Is.EqualTo("trajectories/s_roundtrip.rbt"));
+                Assert.That(reference.Agents, Is.EqualTo(2));
+                Assert.That(reference.Points, Is.EqualTo(robot.Count + human.Count));
+                Assert.That(reference.Offset, Is.EqualTo(12), "the first record follows the 12-byte file header");
+
+                Assert.That(archive.TryRead(reference, out Dictionary<string, List<double[]>> tracks), Is.True);
+                Assert.That(tracks.Keys, Is.EquivalentTo(new[] { "robot_1", "human_3" }));
+                AssertSamePoints(episode.Trajectories["robot_1"], tracks["robot_1"]);
+                AssertSamePoints(episode.Trajectories["human_3"], tracks["human_3"]);
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>A record whose bytes are not all there is skipped, never decoded into a wrong path.</summary>
+        [Test]
+        public void ATruncatedRecordIsRefused()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                var archive = new TrajectoryArchive(root);
+                TrajectoryRef reference = archive.Append(TrajectoryEpisode("s_trunc", "ep_trunc"));
+                Assert.That(reference, Is.Not.Null, archive.LastError);
+
+                string path = Path.Combine(
+                    root,
+                    reference.File.Replace('/', Path.DirectorySeparatorChar));
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write))
+                    stream.SetLength(stream.Length - 4);
+
+                Assert.That(archive.TryRead(reference, out _), Is.False, "a short record is not a record");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>The store hands a reader the archived tracks once the inline map has left RAM.</summary>
+        [Test]
+        public void TheStoreReadsBackTheArchivedTracksAfterTheMapLeftRam()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                EpisodeMetrics episode = TrajectoryEpisode("s_read", "ep_read");
+                int expected = episode.Trajectories["robot_1"].Count;
+                store.Add(episode);
+
+                MetricsExporter.Export(store, root);
+
+                Assert.That(episode.Trajectories, Is.Empty);
+                IReadOnlyDictionary<string, List<double[]>> tracks = store.TracksOf(episode);
+                Assert.That(tracks.ContainsKey("robot_1"), Is.True);
+                Assert.That(tracks["robot_1"].Count, Is.EqualTo(expected));
+            }
+            finally
+            {
+                DeleteExportRoot(root);
             }
         }
 
@@ -600,6 +754,48 @@ namespace RobotSNAP.Tests.Editor
         }
 
         // -- helpers --------------------------------------------------------
+
+        private static string NewExportRoot()
+            => Path.Combine(Path.GetTempPath(), "robotsnap_metrics_" + System.Guid.NewGuid().ToString("N"));
+
+        private static void DeleteExportRoot(string root)
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+
+        /// <summary>An episode carrying two robot tracks, which is what the archive cases are written on.</summary>
+        private static EpisodeMetrics TrajectoryEpisode(string session, string id)
+        {
+            return new EpisodeMetrics
+            {
+                Id = id,
+                Session = session,
+                Robot = "robot_1",
+                TrajectoryStride = 1,
+                Trajectories = new Dictionary<string, List<double[]>>
+                {
+                    ["robot_1"] = new List<double[]>
+                    {
+                        new[] { 0.0, 0.0, 0.0 },
+                        new[] { 1.0, 1.0, 0.0 },
+                        new[] { 2.0, 1.0, 2.0 },
+                    },
+                },
+            };
+        }
+
+        /// <summary>Every sample of <paramref name="actual"/> is the same instant and pose as the expected one.</summary>
+        private static void AssertSamePoints(List<double[]> expected, List<double[]> actual)
+        {
+            Assert.That(actual.Count, Is.EqualTo(expected.Count));
+            for (int index = 0; index < expected.Count; index++)
+            {
+                Assert.That(actual[index][0], Is.EqualTo(expected[index][0]).Within(1e-6), $"t of point {index}");
+                Assert.That(actual[index][1], Is.EqualTo(expected[index][1]).Within(1e-6), $"x of point {index}");
+                Assert.That(actual[index][2], Is.EqualTo(expected[index][2]).Within(1e-6), $"z of point {index}");
+            }
+        }
 
         private static EpisodeAccumulator NewAccumulator(double personalSpaceRadius = 0.5, int capacity = 64)
         {

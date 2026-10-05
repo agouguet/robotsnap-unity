@@ -190,8 +190,8 @@ public sealed class AnalysisEpisodeReplay
     /// </summary>
     public IReadOnlyList<Vector2> Track(string key)
     {
-        if (_episode?.Trajectories == null || string.IsNullOrEmpty(key) ||
-            !_episode.Trajectories.TryGetValue(key, out List<double[]> samples))
+        if (_episode == null || string.IsNullOrEmpty(key) ||
+            !Tracks().TryGetValue(key, out List<double[]> samples))
             return Array.Empty<Vector2>();
 
         return AnalysisTrackReader.PointsUpTo(samples, CursorSeconds());
@@ -207,8 +207,8 @@ public sealed class AnalysisEpisodeReplay
     /// </summary>
     public IReadOnlyList<Vector2> Trail(string key, double windowSeconds = TrailSeconds)
     {
-        if (_episode?.Trajectories == null || string.IsNullOrEmpty(key) || windowSeconds <= 0.0 ||
-            !_episode.Trajectories.TryGetValue(key, out List<double[]> samples))
+        if (_episode == null || string.IsNullOrEmpty(key) || windowSeconds <= 0.0 ||
+            !Tracks().TryGetValue(key, out List<double[]> samples))
             return Array.Empty<Vector2>();
 
         double cursor = CursorSeconds();
@@ -237,12 +237,21 @@ public sealed class AnalysisEpisodeReplay
     /// </summary>
     private double CursorSeconds()
     {
-        if (_episode?.Trajectories == null)
+        if (_episode == null)
             return _time;
 
+        IReadOnlyDictionary<string, List<double[]>> tracks = Tracks();
         string robotKey = MetricsContract.RobotTrackKey(_episode.Robot);
-        return _episode.Trajectories.TryGetValue(robotKey, out List<double[]> robot)
+        return tracks.TryGetValue(robotKey, out List<double[]> robot)
             ? AnalysisTrackReader.FirstSeconds(robot) + _time
             : _time;
     }
+
+    /// <summary>
+    /// The episode's tracks, from the archive when the map has left RAM and from the map while it has not.
+    /// The store caches the last record it read, so a frame that asks for every drawn agent pays for one
+    /// decode rather than one per agent.
+    /// </summary>
+    private IReadOnlyDictionary<string, List<double[]>> Tracks()
+        => MetricsStore.Instance.TracksOf(_episode);
 }

@@ -181,10 +181,10 @@ public sealed class AnalysisEpisodeMap : IDisposable
         _routes.Clear();
         _legend.Clear();
         bool whole = DrawsWholePaths();
+        IReadOnlyDictionary<string, List<double[]>> tracks = MetricsStore.Instance.TracksOf(_episode);
         foreach (AnalysisAgentPalette.TrackColour track in Tracks())
         {
-            if (_episode.Trajectories == null ||
-                !_episode.Trajectories.TryGetValue(track.Key, out List<double[]> samples))
+            if (!tracks.TryGetValue(track.Key, out List<double[]> samples))
                 continue;
 
             IReadOnlyList<Vector2> points = TrackPoints(track.Key, samples);
@@ -206,7 +206,7 @@ public sealed class AnalysisEpisodeMap : IDisposable
     /// sorts the fleet, which a redraw has no reason to repeat: it only changes when another run is selected.
     /// </summary>
     private IReadOnlyList<AnalysisAgentPalette.TrackColour> Tracks()
-        => _tracks ??= AnalysisAgentPalette.Assign(_episode.Trajectories?.Keys,
+        => _tracks ??= AnalysisAgentPalette.Assign(MetricsStore.Instance.TracksOf(_episode).Keys,
             MetricsContract.RobotTrackKey(_episode.Robot), _episode.Robots);
 
     /// <summary>

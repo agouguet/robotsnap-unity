@@ -86,18 +86,19 @@ public sealed class AnalysisPrefixTimeline
     /// </summary>
     public static AnalysisPrefixTimeline Build(EpisodeMetrics episode)
     {
-        if (episode?.Trajectories == null)
+        if (episode == null)
             return Empty;
 
+        IReadOnlyDictionary<string, List<double[]>> tracks = MetricsStore.Instance.TracksOf(episode);
         string robotKey = MetricsContract.RobotTrackKey(episode.Robot);
-        if (!episode.Trajectories.TryGetValue(robotKey, out List<double[]> robot) || robot == null)
+        if (!tracks.TryGetValue(robotKey, out List<double[]> robot) || robot == null)
             return Empty;
 
         // Only the crowd counts as humans. The episode files every robot of the fleet under its own roster
         // key, so a second robot must never be measured against as if it were a person - that would make the
         // prefix disagree with the recorder, which never counted a robot as a human either.
         var humans = new List<IReadOnlyList<double[]>>();
-        foreach (KeyValuePair<string, List<double[]>> track in episode.Trajectories)
+        foreach (KeyValuePair<string, List<double[]>> track in tracks)
         {
             if (!AnalysisTrackReader.IsHumanKey(track.Key) || track.Value == null || track.Value.Count == 0)
                 continue;

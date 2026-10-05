@@ -90,6 +90,15 @@ namespace RobotSNAP.Metrics
         [JsonProperty("personal_space_radius_m")] public double PersonalSpaceRadiusMetres;
         [JsonProperty("trajectory_stride")] public int TrajectoryStride = 1;
         [JsonProperty("trajectories")] public Dictionary<string, List<double[]>> Trajectories = new();
+        /// <summary>
+        /// Where this episode's trajectory sits in the session archive, or null while it has not been
+        /// archived yet - which is what tells the exporter there is still work to do for it.
+        ///
+        /// When it is set, the archive holds the points and <see cref="Trajectories"/> is emptied, which is
+        /// what keeps a ten-thousand-episode session out of RAM. A reader must therefore prefer the inline
+        /// map when it is there and fall back to this reference, the same rule the catalogue line follows.
+        /// </summary>
+        [JsonProperty("trajectory_ref")] public TrajectoryRef TrajectoryRef;
         [JsonProperty("session")] public string Session;
 
         /// <summary>Sentinel a distance metric carries when the episode held no human to measure against.</summary>
