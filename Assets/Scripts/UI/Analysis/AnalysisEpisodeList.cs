@@ -4,24 +4,24 @@ using RobotSNAP.Metrics;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// The episode list of the analysis session: one row per finished episode, newest first, with the toolbar
-/// and the filters that decide which of them a reader is looking at.
+/// The episode list of the analysis session: one row per finished episode, newest first, with the filters that
+/// decide which of them a reader is looking at.
 ///
-/// A row carries the two things a reader does to one run - export it, delete it - and the checkbox that puts
-/// it in a multi-episode selection. They live in the row rather than in the panel that describes the run,
-/// because the action belongs to the episode the reader is pointing at, and a benchmark is scanned by
-/// pointing at rows.
+/// A row carries the two things a reader does to one run - export it, delete it - and a click on the row is
+/// the single selection the panels beside it read: show me this one. The actions live in the row rather than
+/// in the panel that describes the run, because the action belongs to the episode the reader is pointing at,
+/// and a benchmark is scanned by pointing at rows. A click that landed on an action is neither; see
+/// <see cref="IsRowAction"/>.
 ///
-/// The two gestures mean different things and never overlap: a click on a row is a single selection - show me
-/// this one - and a click on a checkbox is a multi-selection - aggregate these. A click that landed on an
-/// action is neither; <see cref="IsRowAction"/> is what tells the row's own click handler so.
+/// The heading names the session the rows belong to and carries the pencil that renames it, so what the list
+/// belongs to is read in the list rather than only in the rail beside it.
 ///
 /// The list owns its subscription to the session and drops it in <see cref="Dispose"/>, so it is rebuilt from
 /// the store every time an episode ends and never keeps a stale handler behind.
 /// </summary>
 public sealed class AnalysisEpisodeList : VisualElement
 {
-    /// <summary>Raised with the id of the episode the reader put the focus on - a row click or a check.</summary>
+    /// <summary>Raised with the id of the episode the reader put the focus on - a row click.</summary>
     public event Action<string> EpisodeSelected;
 
     /// <summary>Raised with the id of an episode the reader asked to export.</summary>
@@ -30,8 +30,11 @@ public sealed class AnalysisEpisodeList : VisualElement
     /// <summary>Raised with the id of an episode the reader asked to delete.</summary>
     public event Action<string> DeleteRequested;
 
-    /// <summary>Raised after the checked set or the visible rows changed, so the tab can re-scope its panels.</summary>
-    public event Action SelectionChanged;
+    /// <summary>
+    /// Raised with the name the reader committed for the session the rows belong to, or <c>null</c> when they
+    /// emptied the field. Where that name goes belongs to the tab, not to the list.
+    /// </summary>
+    public event Action<string> SessionRenameRequested;
 
     /// <summary>Choice that clears a criterion, and the caption the scenario filter carries when it is alone.</summary>
     private const string AllOutcomes = "All outcomes";
@@ -49,8 +52,7 @@ public sealed class AnalysisEpisodeList : VisualElement
     };
 
     private Label _count;
-    private Button _selectAll;
-    private Button _clearSelection;
+    private AnalysisEditableTitle _title;
     private DropdownField _outcomeFilter;
     private DropdownField _scenarioFilter;
     private TextField _search;
@@ -58,7 +60,6 @@ public sealed class AnalysisEpisodeList : VisualElement
     private readonly VisualElement _rows;
 
     private readonly AnalysisEpisodeFilter _filter = new AnalysisEpisodeFilter();
-    private readonly HashSet<string> _checked = new HashSet<string>(StringComparer.Ordinal);
     private readonly List<EpisodeMetrics> _visible = new List<EpisodeMetrics>();
 
     private AnalysisSession _session;
@@ -68,7 +69,6 @@ public sealed class AnalysisEpisodeList : VisualElement
         AddToClassList("analysis-list");
 
         Add(BuildHeader());
-        Add(BuildToolbar());
         Add(BuildFilters());
 
         var scroll = new ScrollView();
@@ -77,24 +77,6 @@ public sealed class AnalysisEpisodeList : VisualElement
         _rows.AddToClassList("analysis-list-rows");
         scroll.Add(_rows);
         Add(scroll);
-    }
-
-    /// <summary>The episodes the reader checked, in the order the session holds them.</summary>
-    public IReadOnlyList<EpisodeMetrics> CheckedEpisodes
-    {
-        get
-        {
-            var checkedEpisodes = new List<EpisodeMetrics>();
-            if (_session == null)
-                return checkedEpisodes;
-
-            foreach (EpisodeMetrics episode in _session.Episodes)
-            {
-                if (_checked.Contains(episode.Id))
-                    checkedEpisodes.Add(episode);
-            }
-            return checkedEpisodes;
-        }
     }
 
     /// <summary>The ids of the rows the filters currently show.</summary>
@@ -130,13 +112,12 @@ public sealed class AnalysisEpisodeList : VisualElement
         _session = null;
     }
 
-    // -- selection ------------------------------------------------------------
-
     /// <summary>
-    /// Whether a click that landed on <paramref name="target"/> is one of the row's own actions - its
-    /// checkbox, its export glyph, its delete glyph - rather than a click on the row itself. An action does
-    /// only what its tooltip says: exporting a run has never also meant "select it", and deleting one leaves
-    /// the reader looking at whatever the list now holds instead of at the run that just left.
+    /// Whether a click that landed on <paramref name="target"/> is one of a row's own actions - its export
+    /// glyph or its delete glyph - rather than a click on the row itself. An action does only what its
+    /// tooltip says: exporting a run has never also meant "select it", and deleting one leaves the reader
+    /// looking at whatever the list now holds instead of at the run that just left. The walk stops at the row
+    /// it started in, so a glyph of the Sessions rail is judged the same way as one of these rows.
     /// </summary>
     public static bool IsRowAction(VisualElement target)
     {
@@ -144,32 +125,11 @@ public sealed class AnalysisEpisodeList : VisualElement
         {
             if (element.ClassListContains("analysis-row-action"))
                 return true;
-            if (element.ClassListContains("analysis-episode-row"))
+            if (element.ClassListContains("analysis-episode-row") ||
+                element.ClassListContains("analysis-rail-row"))
                 return false;
         }
         return false;
-    }
-
-    /// <summary>Checks every episode the filters show. A row a filter hid is not in the selection.</summary>
-    public void SelectAllVisible()
-    {
-        foreach (EpisodeMetrics episode in _visible)
-            _checked.Add(episode.Id);
-
-        FocusNewestChecked();
-        RefreshChrome();
-        SelectionChanged?.Invoke();
-    }
-
-    /// <summary>Unchecks everything, which is what puts the whole session back in the overview.</summary>
-    public void ClearSelection()
-    {
-        if (_checked.Count == 0)
-            return;
-
-        _checked.Clear();
-        RefreshChrome();
-        SelectionChanged?.Invoke();
     }
 
     /// <summary>Sets the outcome criterion, as if the reader had picked it in the dropdown.</summary>
@@ -219,31 +179,26 @@ public sealed class AnalysisEpisodeList : VisualElement
         var header = new VisualElement();
         header.AddToClassList("analysis-list-header");
 
+        // The session names itself in the heading of the panel that lists it, at the size of a heading, with
+        // the pencil that renames it one click away.
+        _title = new AnalysisEditableTitle();
+        _title.AddToClassList("analysis-list-name");
+        _title.RenameRequested += name => SessionRenameRequested?.Invoke(name);
+        header.Add(_title);
+
+        var caption = new VisualElement();
+        caption.AddToClassList("analysis-list-caption");
+
         var title = new Label("Episodes");
         title.AddToClassList("analysis-list-title");
-        header.Add(title);
+        caption.Add(title);
 
         _count = new Label("0");
         _count.AddToClassList("analysis-list-count");
-        header.Add(_count);
+        caption.Add(_count);
+        header.Add(caption);
+
         return header;
-    }
-
-    private VisualElement BuildToolbar()
-    {
-        var toolbar = new VisualElement();
-        toolbar.AddToClassList("analysis-list-toolbar");
-
-        _selectAll = new Button(SelectAllVisible) { text = "Select all" };
-        _selectAll.AddToClassList("analysis-list-tool");
-        _selectAll.tooltip = "Check every episode the filters show";
-        toolbar.Add(_selectAll);
-
-        _clearSelection = new Button(ClearSelection) { text = "Clear selection" };
-        _clearSelection.AddToClassList("analysis-list-tool");
-        _clearSelection.tooltip = "Uncheck every episode and show the whole session";
-        toolbar.Add(_clearSelection);
-        return toolbar;
     }
 
     private VisualElement BuildFilters()
@@ -302,10 +257,39 @@ public sealed class AnalysisEpisodeList : VisualElement
             return;
 
         IReadOnlyList<EpisodeMetrics> episodes = _session.Episodes;
+        RefreshTitle();
         RebuildScenarioChoices(episodes);
         ReadFilterFromControls();
         RefreshFiltered();
-        SelectionChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Names the heading after the session the rows belong to: the name the user gave it when there is one,
+    /// and the label computed from its episodes otherwise - the same two the rail line prints.
+    /// </summary>
+    private void RefreshTitle()
+    {
+        if (_title == null)
+            return;
+
+        string name = null;
+        if (_session.IsRunningSession)
+        {
+            name = _session.Store?.SessionName;
+        }
+        else
+        {
+            foreach (ArchiveSessionRecord record in _session.SavedSessions)
+            {
+                if (string.Equals(record.Id, _session.SourceId, StringComparison.Ordinal))
+                {
+                    name = record.Name;
+                    break;
+                }
+            }
+        }
+
+        _title.Show(AnalysisFormatting.SessionLabel(name, _session.Episodes));
     }
 
     private void ApplyFilters()
@@ -336,14 +320,8 @@ public sealed class AnalysisEpisodeList : VisualElement
 
         _visible.Clear();
         _visible.AddRange(_filter.Apply(_session.Episodes));
-        bool pruned = PruneChecked();
         RebuildRows();
         RefreshChrome();
-
-        // A criterion that hides a checked row takes it out of the selection, and the panels that were
-        // scoped to that selection have to hear about it.
-        if (pruned)
-            SelectionChanged?.Invoke();
     }
 
     private static string OutcomeValue(int index)
@@ -392,22 +370,6 @@ public sealed class AnalysisEpisodeList : VisualElement
         _scenarioFilter.style.display = scenarios.Count > 1 ? DisplayStyle.Flex : DisplayStyle.None;
     }
 
-    /// <summary>
-    /// Drops every checked id the filters no longer show, and reports whether it dropped one. A selection the
-    /// reader cannot see is a selection that would quietly skew the overview.
-    /// </summary>
-    private bool PruneChecked()
-    {
-        if (_checked.Count == 0)
-            return false;
-
-        var visibleIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (EpisodeMetrics episode in _visible)
-            visibleIds.Add(episode.Id);
-
-        return _checked.RemoveWhere(id => !visibleIds.Contains(id)) > 0;
-    }
-
     private void RebuildRows()
     {
         _rows.Clear();
@@ -415,9 +377,15 @@ public sealed class AnalysisEpisodeList : VisualElement
         if (_visible.Count == 0)
         {
             bool anyEpisode = _session != null && _session.Episodes.Count > 0;
-            var empty = new Label(anyEpisode
-                ? "No episode matches these filters."
-                : "No episode yet. Run a scenario; an episode appears here as soon as it ends.");
+            string message;
+            if (anyEpisode)
+                message = "No episode matches these filters.";
+            else if (_session != null && !_session.IsRunningSession)
+                message = "This saved session holds no episode.";
+            else
+                message = "No episode yet. Run a scenario; an episode appears here as soon as it ends.";
+
+            var empty = new Label(message);
             empty.AddToClassList("analysis-empty-message");
             _rows.Add(empty);
             return;
@@ -431,23 +399,14 @@ public sealed class AnalysisEpisodeList : VisualElement
     private VisualElement BuildRow(EpisodeMetrics episode)
     {
         string id = episode.Id;
-        bool isChecked = _checked.Contains(id);
 
         var row = new VisualElement();
         row.AddToClassList("analysis-episode-row");
         row.userData = id;
-        row.EnableInClassList("checked", isChecked);
         row.EnableInClassList("selected", IsFocused(id));
 
         var top = new VisualElement();
         top.AddToClassList("analysis-row-top");
-
-        var check = new Toggle { value = isChecked };
-        check.AddToClassList("analysis-row-check");
-        check.AddToClassList("analysis-row-action");
-        check.tooltip = "Check this episode to read the session overview of the checked ones";
-        check.RegisterValueChangedCallback(evt => SetChecked(id, evt.newValue));
-        top.Add(check);
 
         var label = new Label(AnalysisFormatting.EpisodeLabel(episode));
         label.AddToClassList("analysis-row-label");
@@ -458,13 +417,15 @@ public sealed class AnalysisEpisodeList : VisualElement
         outcome.AddToClassList(AnalysisFormatting.OutcomeClass(episode.Outcome));
         top.Add(outcome);
 
+        // Every row carries the two glyphs, whichever side of the archive the episode lives on: an episode
+        // read back from a folder is exported and deleted through the same two files the running one uses.
         var actions = new VisualElement();
         actions.AddToClassList("analysis-row-actions");
         actions.AddToClassList("analysis-row-action");
         actions.Add(BuildIcon("analysis-row-icon-export", "Export this episode",
-            () => ExportRequested?.Invoke(id)));
+            () => ClickExport(row)));
         actions.Add(BuildIcon("analysis-row-icon-delete", "Delete this episode",
-            () => DeleteRequested?.Invoke(id)));
+            () => ClickDelete(row)));
         top.Add(actions);
         row.Add(top);
 
@@ -495,6 +456,24 @@ public sealed class AnalysisEpisodeList : VisualElement
             Focus(id);
     }
 
+    /// <summary>
+    /// What the export glyph of one row does: hands the episode it names to whoever owns the export. Split out
+    /// from the callback so the rule can be read - and tested - without a live event system dispatching a real
+    /// click.
+    /// </summary>
+    public void ClickExport(VisualElement row)
+    {
+        if (row?.userData is string id && !string.IsNullOrEmpty(id))
+            ExportRequested?.Invoke(id);
+    }
+
+    /// <summary>What the delete glyph of one row does: asks for the episode it names to be removed.</summary>
+    public void ClickDelete(VisualElement row)
+    {
+        if (row?.userData is string id && !string.IsNullOrEmpty(id))
+            DeleteRequested?.Invoke(id);
+    }
+
     private static Button BuildIcon(string iconClass, string tooltip, Action clicked)
     {
         var button = new Button(clicked) { text = string.Empty };
@@ -507,52 +486,14 @@ public sealed class AnalysisEpisodeList : VisualElement
     /// <summary>A click on the row is a single selection: this run, and only this run.</summary>
     private void Focus(string id)
     {
-        _checked.Clear();
-        _checked.Add(id);
         RefreshChrome();
         EpisodeSelected?.Invoke(id);
-        SelectionChanged?.Invoke();
-    }
-
-    /// <summary>Checks or unchecks one episode, which is what the row's checkbox does.</summary>
-    public void SetChecked(string id, bool isChecked)
-    {
-        if (string.IsNullOrEmpty(id))
-            return;
-
-        if (isChecked)
-            _checked.Add(id);
-        else
-            _checked.Remove(id);
-
-        // The reader is pointing at this row, so the map follows it; unchecking the last one leaves the
-        // focus where it was rather than yanking it somewhere else.
-        if (isChecked)
-            EpisodeSelected?.Invoke(id);
-        else
-            FocusNewestChecked();
-
-        RefreshChrome();
-        SelectionChanged?.Invoke();
-    }
-
-    private void FocusNewestChecked()
-    {
-        EpisodeMetrics newest = null;
-        foreach (EpisodeMetrics episode in _visible)
-        {
-            if (_checked.Contains(episode.Id))
-                newest = episode;
-        }
-
-        if (newest != null)
-            EpisodeSelected?.Invoke(newest.Id);
     }
 
     private bool IsFocused(string id)
         => _session?.Selected != null && string.Equals(_session.Selected.Id, id, StringComparison.Ordinal);
 
-    /// <summary>The count and the two toolbar actions, which depend on both the filters and the selection.</summary>
+    /// <summary>The count, and which row the list points at.</summary>
     private void RefreshChrome()
     {
         int total = _session != null ? _session.Episodes.Count : 0;
@@ -562,24 +503,13 @@ public sealed class AnalysisEpisodeList : VisualElement
             ? $"{_visible.Count} of {total}"
             : total == 1 ? "1 episode" : total + " episodes";
 
-        _selectAll?.SetEnabled(_visible.Count > 0);
-        _clearSelection?.SetEnabled(_checked.Count > 0);
-
         string focusedId = _session?.Selected?.Id;
         foreach (VisualElement row in _rows.Children())
         {
             if (row.userData is not string id)
                 continue;
 
-            bool isChecked = _checked.Contains(id);
-            row.EnableInClassList("checked", isChecked);
             row.EnableInClassList("selected", string.Equals(id, focusedId, StringComparison.Ordinal));
-
-            // "Select all" and "Clear selection" move the checked set without anyone touching a checkbox, so
-            // the boxes are brought back in line here rather than left showing the previous state.
-            Toggle check = row.Q<Toggle>(className: "analysis-row-check");
-            if (check != null && check.value != isChecked)
-                check.SetValueWithoutNotify(isChecked);
         }
     }
 

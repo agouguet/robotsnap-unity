@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using RobotSNAP.Metrics;
 using RobotSNAP.ROS;
 using UnityEngine;
 using RobotSNAP.Core;
@@ -113,8 +114,19 @@ namespace RobotSNAP
 
         private void OnApplicationQuit()
         {
+            FlushMetrics();
             if (_autoSaveOnQuit && _runtimeConfig != null)
                 SaveDefaultConfig();
+        }
+
+        /// <summary>
+        /// A pause is where a mobile build is killed without ever seeing a quit, so the same guaranteed write
+        /// happens there: an episode that finished a moment earlier is still only in RAM.
+        /// </summary>
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+                FlushMetrics();
         }
 
         #endregion
@@ -153,6 +165,31 @@ namespace RobotSNAP
                 // asks the same question in the same frame, and two clocks is a session whose time is
                 // kept twice. See Clock.EnsureExists.
                 _clock = Clock.EnsureExists();
+            }
+        }
+
+        /// <summary>
+        /// Writes every finished episode the session has not archived yet. The recorder exports as each episode
+        /// finishes, but an episode that ended between that write and the application going away is still only
+        /// in memory, and this is the last chance to put it on disk. The episode in progress is deliberately
+        /// not closed: this saves what finished, it does not end the run. Only a real play session writes,
+        /// because an editor that is not playing has no run worth saving and writing there would only scatter
+        /// test data into the project.
+        /// </summary>
+        private static void FlushMetrics()
+        {
+            if (!Application.isPlaying)
+                return;
+
+            try
+            {
+                MetricsExporter.Export(MetricsStore.Instance);
+            }
+            catch (Exception exception)
+            {
+                // Shutting down is not a place to throw: the write is best-effort, and a log line is the only
+                // other thing it could lose.
+                Debug.LogWarning($"[Supervisor] flushing metrics on exit failed: {exception.Message}");
             }
         }
 

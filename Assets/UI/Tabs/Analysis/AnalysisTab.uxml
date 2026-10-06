@@ -9,11 +9,11 @@
             </ui:VisualElement>
             <ui:VisualElement class="analysis-header-actions">
                 <ui:Label name="AnalysisExportStatus" text="" class="analysis-export-status"/>
-                <ui:Button name="AnalysisExportButton" text="Export session" class="analysis-export-button"/>
-                <ui:Button name="AnalysisClearButton" text="Clear session" class="analysis-clear-button"/>
+                <ui:Button name="AnalysisOpenFolderButton" text="Open folder" class="analysis-folder-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement class="analysis-content">
+            <ui:VisualElement name="AnalysisSessionRailHost" class="analysis-rail-host"/>
             <ui:VisualElement name="AnalysisEpisodeListHost" class="analysis-list-host"/>
             <ui:VisualElement name="AnalysisMapPanel" class="analysis-map-section">
                 <ui:VisualElement class="analysis-section-heading">
@@ -21,7 +21,10 @@
                         <ui:Label text="Trajectories" class="analysis-section-title"/>
                         <ui:Label name="AnalysisMapCaption" text="No episode selected." class="analysis-section-subtitle"/>
                     </ui:VisualElement>
-                    <ui:Label name="AnalysisMapOutcome" text="" class="analysis-outcome"/>
+                    <ui:VisualElement class="analysis-section-trailing">
+                        <ui:VisualElement name="AnalysisEpisodeTitleHost" class="analysis-title-host"/>
+                        <ui:Label name="AnalysisMapOutcome" text="" class="analysis-outcome"/>
+                    </ui:VisualElement>
                 </ui:VisualElement>
                 <ui:VisualElement class="analysis-map-body">
                     <ui:VisualElement name="AnalysisMapCanvas" class="analysis-map-canvas">
@@ -34,8 +37,10 @@
                 <ui:VisualElement name="AnalysisTimelineHost" class="analysis-timeline-host"/>
             </ui:VisualElement>
             <ui:VisualElement name="AnalysisDetailColumn" class="analysis-detail-column">
-                <ui:VisualElement name="AnalysisEpisodeDetailHost" class="analysis-episode-detail-host"/>
-                <ui:VisualElement name="AnalysisSessionSummaryHost" class="analysis-session-summary-host"/>
+                <ui:ScrollView class="analysis-detail-scroll">
+                    <ui:VisualElement name="AnalysisEpisodeDetailHost" class="analysis-episode-detail-host"/>
+                    <ui:VisualElement name="AnalysisSessionSummaryHost" class="analysis-session-summary-host"/>
+                </ui:ScrollView>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

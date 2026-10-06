@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using RobotSNAP.Agents;
@@ -458,6 +460,38 @@ namespace RobotSNAP.Tests.Editor
         }
 
         /// <summary>
+        /// A session with nothing to record is not announced at all. The session line is what makes the folder
+        /// list the session in the analysis tab, so a line written for an empty store is a session a reader can
+        /// open and find nothing in - and the write that happens when the application goes away does this to
+        /// every run that never filed an episode. Exporting an empty store therefore leaves the folder as it
+        /// found it, while still reporting where it would have written.
+        /// </summary>
+        [Test]
+        public void AnExportWithNothingToRecordAnnouncesNoSession()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.Clear();
+                Assert.That(store.Count, Is.Zero, "the case starts from a session with nothing in it");
+
+                MetricsExportReport report = MetricsExporter.Export(store, root);
+
+                Assert.That(report.Directory, Is.EqualTo(root),
+                    "the export still names the folder it was asked for");
+                Assert.That(File.Exists(Path.Combine(root, TrajectoryArchive.SessionsFileName)), Is.False,
+                    "an empty session leaves no session line behind");
+                Assert.That(File.Exists(Path.Combine(root, TrajectoryArchive.CatalogueFileName)), Is.False,
+                    "and no catalogue");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
         /// The catalogue is one line per finished episode, appended once and never rewritten, and the line
         /// defers the trajectory to the archive instead of repeating it.
         /// </summary>
@@ -592,6 +626,213 @@ namespace RobotSNAP.Tests.Editor
             }
             finally
             {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// A root the process cannot write to must not cost the run its trajectories: the export falls back to
+        /// the persistent-data folder, says so, and is not treated as a failure. The impossible root is a path
+        /// under an ordinary file, which makes <c>Directory.CreateDirectory</c> fail deterministically on every
+        /// platform this project builds for.
+        /// </summary>
+        [Test]
+        public void AnUnwritableRootFallsBackToPersistentDataInsteadOfLosingTheTrajectory()
+        {
+            string blocker = Path.Combine(
+                Path.GetTempPath(), "robotsnap_blocker_" + System.Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllText(blocker, "an ordinary file, so no folder can be made under it");
+
+            string impossible = Path.Combine(blocker, "sub");
+            string fallback = Path.Combine(Application.persistentDataPath, "robotsnap", "metrics");
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                EpisodeMetrics episode = Synthetic("ep_fallback");
+                store.Add(episode);
+
+                MetricsExportReport report = MetricsExporter.Export(store, impossible);
+
+                Assert.That(report.UsedFallback, Is.True, "the export says it did not land where it was asked to");
+                Assert.That(report.Directory, Is.EqualTo(fallback), "it landed in the persistent-data fallback");
+                Assert.That(MetricsExporter.LastError, Is.Null, "a fallback that worked is not a failure");
+
+                Assert.That(File.Exists(Path.Combine(fallback, "sessions.jsonl")), Is.True);
+                Assert.That(File.Exists(Path.Combine(fallback, "catalogue.jsonl")), Is.True);
+                Assert.That(episode.TrajectoryRef, Is.Not.Null, "the trajectory was archived, not dropped");
+                Assert.That(
+                    File.Exists(Path.Combine(
+                        fallback, episode.TrajectoryRef.File.Replace('/', Path.DirectorySeparatorChar))),
+                    Is.True,
+                    "the archive record is under the fallback root");
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
+                DeleteExportRoot(fallback);
+
+                // The test created the fallback's parent folder; it is removed too when it holds nothing, so
+                // the case leaves the machine as it found it.
+                string parent = Path.GetDirectoryName(fallback);
+                if (Directory.Exists(parent) && Directory.GetFileSystemEntries(parent).Length == 0)
+                    Directory.Delete(parent);
+
+                if (File.Exists(blocker))
+                    File.Delete(blocker);
+            }
+        }
+
+        /// <summary>
+        /// The marker of an unarchived episode is a null reference, and the exporter must not care why it is
+        /// null: an episode a previous call left behind - exactly what a failed archive leaves - is written by
+        /// the next call, and the episodes that already have a record are not written again.
+        /// </summary>
+        [Test]
+        public void AnEpisodeLeftUnarchivedByAnEarlierCallIsWrittenByTheNextOne()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.Add(Synthetic("ep_first"));
+                MetricsExporter.Export(store, root);
+
+                // The second episode the first export did not reach. A failed archive takes the reference back
+                // and keeps the map, so this is the state a retry has to look for.
+                EpisodeMetrics leftover = Synthetic("ep_leftover");
+                store.Add(leftover);
+                leftover.TrajectoryRef = null;
+
+                Assert.That(leftover.Trajectories.Count, Is.GreaterThan(0),
+                    "an unarchived episode still holds its map");
+
+                MetricsExporter.Export(store, root);
+
+                Assert.That(leftover.TrajectoryRef, Is.Not.Null, "the next call archives what was left behind");
+                Assert.That(leftover.Trajectories, Is.Empty, "the map leaves RAM once the record holds it");
+                Assert.That(File.ReadAllLines(Path.Combine(root, "catalogue.jsonl")).Length, Is.EqualTo(2),
+                    "each episode gets one line, and the archived one is not appended again");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>A root the tab has not written to is empty, not an error.</summary>
+        [Test]
+        public void ScanReadsAnAbsentRootAsEmpty()
+        {
+            string missing = Path.Combine(
+                Path.GetTempPath(), "robotsnap_scan_missing_" + System.Guid.NewGuid().ToString("N"));
+
+            Assert.That(TrajectoryArchive.Scan(missing).IsEmpty, Is.True);
+            Assert.That(TrajectoryArchive.Scan(null).IsEmpty, Is.True);
+            Assert.That(TrajectoryArchive.Scan(string.Empty).IsEmpty, Is.True);
+        }
+
+        /// <summary>
+        /// The summary is what a delete is decided on, so it has to count the lines a reader would lose and the
+        /// bytes those lines point at.
+        /// </summary>
+        [Test]
+        public void ScanCountsSessionsEpisodesAndBytes()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.Add(Synthetic("ep_scan_one"));
+                store.Add(Synthetic("ep_scan_two"));
+                MetricsExporter.Export(store, root);
+
+                TrajectoryArchive.ArchiveSummary summary = TrajectoryArchive.Scan(root);
+
+                Assert.That(summary.IsEmpty, Is.False);
+                Assert.That(summary.Sessions, Is.EqualTo(1), "both episodes share the one session line");
+                Assert.That(summary.Episodes, Is.EqualTo(2), "one catalogue line per episode");
+                Assert.That(summary.Bytes, Is.GreaterThan(0L), "the archives under trajectories/ are counted");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// Deleting is the one thing that removes an export, and it has to be safe to ask twice: the second
+        /// call finds an empty folder and says so rather than failing.
+        /// </summary>
+        [Test]
+        public void DeleteAllRemovesTheRecordsAndIsIdempotent()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.Add(Synthetic("ep_delete"));
+                MetricsExporter.Export(store, root);
+
+                Assert.That(TrajectoryArchive.DeleteAll(root), Is.True);
+                Assert.That(TrajectoryArchive.Scan(root).IsEmpty, Is.True,
+                    "the summary reads empty once the files are gone");
+                Assert.That(File.Exists(Path.Combine(root, "catalogue.jsonl")), Is.False);
+                Assert.That(File.Exists(Path.Combine(root, "sessions.jsonl")), Is.False);
+                Assert.That(
+                    Directory.GetFiles(Path.Combine(root, TrajectoryArchive.TrajectoriesFolderName)).Length,
+                    Is.EqualTo(0),
+                    "no archive is left under trajectories/");
+
+                Assert.That(TrajectoryArchive.DeleteAll(root), Is.True,
+                    "a second delete finds nothing and still succeeds");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>A root that was never written to is also a root with nothing to delete.</summary>
+        [Test]
+        public void DeleteAllForgivesAMissingRoot()
+        {
+            string missing = Path.Combine(
+                Path.GetTempPath(), "robotsnap_delete_missing_" + System.Guid.NewGuid().ToString("N"));
+
+            Assert.That(Directory.Exists(missing), Is.False);
+            Assert.That(TrajectoryArchive.DeleteAll(missing), Is.True);
+            Assert.That(TrajectoryArchive.DeleteAll(missing), Is.True, "asking twice is the same answer");
+        }
+
+        /// <summary>
+        /// An episode keeps its reference after its record is deleted, so reading it must be a no-op the
+        /// interface can draw - an empty map - rather than an exception or a stale cached read.
+        /// </summary>
+        [Test]
+        public void AnEpisodeWhoseRecordWasDeletedReadsAsNoTracksInsteadOfThrowing()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                EpisodeMetrics episode = TrajectoryEpisode("s_gone", "ep_gone");
+                store.Add(episode);
+                MetricsExporter.Export(store, root);
+
+                Assert.That(episode.TrajectoryRef, Is.Not.Null);
+                Assert.That(store.TracksOf(episode).ContainsKey("robot_1"), Is.True,
+                    "the record is readable while it exists");
+
+                Assert.That(TrajectoryArchive.DeleteAll(root), Is.True);
+                store.ForgetArchive();
+                store.UseArchive(root);
+
+                Assert.That(store.TracksOf(episode), Is.Empty,
+                    "a record that is gone from disk reads as no tracks, never an exception");
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
                 DeleteExportRoot(root);
             }
         }
@@ -753,10 +994,660 @@ namespace RobotSNAP.Tests.Editor
                 "an episode that never recorded a step is dropped, not filed");
         }
 
+        // -- reading a session back from an archive --------------------------
+
+        /// <summary>
+        /// A catalogue line is the episode as it went on the wire, so reading one back has to give the same
+        /// episode: the identity, the reference to its record, and the folder that record lives in.
+        /// </summary>
+        [Test]
+        public void ACatalogueRoundTripsTheEpisodesOfASession()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                string session = store.SessionId;
+                EpisodeMetrics first = TrajectoryEpisode(session, "ep_round_one");
+                first.StartedAt = "2026-09-30T10:00:00.0000000Z";
+                store.Add(first);
+                store.Add(TrajectoryEpisode(session, "ep_round_two"));
+                MetricsExporter.Export(store, root);
+
+                Dictionary<string, List<EpisodeMetrics>> bySession =
+                    ArchiveCatalogue.ReadEpisodesBySession(root);
+
+                Assert.That(bySession.ContainsKey(session), Is.True);
+                List<EpisodeMetrics> episodes = bySession[session];
+                Assert.That(episodes.Select(episode => episode.Id),
+                    Is.EqualTo(new[] { "ep_round_one", "ep_round_two" }),
+                    "the lines are grouped in the order they were appended, oldest first");
+                Assert.That(episodes[0].TrajectoryRef, Is.Not.Null, "an archived episode carries its reference");
+                Assert.That(episodes[0].Trajectories, Is.Empty, "the points are left on disk, not read into RAM");
+                Assert.That(episodes[0].ArchiveRoot, Is.EqualTo(root),
+                    "a re-read episode names the folder its record lives in");
+                Assert.That(episodes[0].StartedAt, Is.EqualTo("2026-09-30T10:00:00.0000000Z"),
+                    "the instant is read back as it was written, not reformatted by the current culture");
+
+                IReadOnlyList<ArchiveSessionRecord> sessions = ArchiveCatalogue.ReadSessions(root);
+                Assert.That(sessions.Count, Is.EqualTo(1));
+                Assert.That(sessions[0].Id, Is.EqualTo(session));
+                Assert.That(sessions[0].Episodes, Is.EqualTo(2), "the count comes from the catalogue beside it");
+                Assert.That(sessions[0].Root, Is.EqualTo(root));
+                Assert.That(sessions[0].StartedAt, Is.Not.Null.And.Not.Empty);
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// The last line of an append-only file is exactly where an interrupted export lands, so a line that
+        /// stops mid-document costs that line and not the episodes written before it.
+        /// </summary>
+        [Test]
+        public void ATruncatedLastCatalogueLineIsSkippedWithoutLosingTheOthers()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                string session = store.SessionId;
+                store.Add(TrajectoryEpisode(session, "ep_whole"));
+                MetricsExporter.Export(store, root);
+
+                File.AppendAllText(
+                    Path.Combine(root, TrajectoryArchive.CatalogueFileName),
+                    "{\"id\":\"ep_half\",\"session\":\"s_");
+
+                Dictionary<string, List<EpisodeMetrics>> bySession =
+                    ArchiveCatalogue.ReadEpisodesBySession(root);
+
+                Assert.That(bySession[session].Select(episode => episode.Id),
+                    Is.EqualTo(new[] { "ep_whole" }),
+                    "the half-written line is dropped and the complete one is kept");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>An absent or unnamed root is a root with nothing saved, never an exception.</summary>
+        [Test]
+        public void AnAbsentArchiveReadsAsNothing()
+        {
+            string missing = Path.Combine(
+                Path.GetTempPath(), "robotsnap_archive_missing_" + System.Guid.NewGuid().ToString("N"));
+
+            Assert.That(ArchiveCatalogue.ReadEpisodesBySession(missing), Is.Empty);
+            Assert.That(ArchiveCatalogue.ReadSessions(missing), Is.Empty);
+            Assert.That(ArchiveCatalogue.ReadAll(new[] { missing }), Is.Empty);
+            Assert.That(ArchiveCatalogue.ReadEpisodesBySession(null), Is.Empty);
+            Assert.That(ArchiveCatalogue.ReadSessions(string.Empty), Is.Empty);
+            Assert.That(ArchiveCatalogue.ReadAll(null), Is.Empty);
+        }
+
+        /// <summary>
+        /// The tab watches two roots at once, so a session exported to both has to be listed once and read from
+        /// the folder the user picked first; the list is newest first, and a session whose line carries no
+        /// readable instant belongs after the dated ones rather than sorting as the oldest. Every session below
+        /// has an episode behind it, because a session line with no episode is not a session the tab lists.
+        /// </summary>
+        [Test]
+        public void MergingTwoRootsKeepsOneCopyOfASessionAndSortsNewestFirst()
+        {
+            string first = NewExportRoot();
+            string second = NewExportRoot();
+            try
+            {
+                WriteSessionLine(first, "s_shared", "2026-10-01T09:00:00Z");
+                WriteCatalogueLine(first, "{\"id\":\"ep_shared_first\",\"session\":\"s_shared\"}");
+                WriteSessionLine(first, "s_older", "2026-09-01T09:00:00Z");
+                WriteCatalogueLine(first, "{\"id\":\"ep_older\",\"session\":\"s_older\"}");
+                WriteSessionLine(second, "s_shared", "2026-10-01T09:00:00Z");
+                WriteCatalogueLine(second, "{\"id\":\"ep_shared_second\",\"session\":\"s_shared\"}");
+                WriteSessionLine(second, "s_newest", "2026-10-05T09:00:00Z");
+                WriteCatalogueLine(second, "{\"id\":\"ep_newest\",\"session\":\"s_newest\"}");
+                WriteSessionLine(second, "s_undated", string.Empty);
+                WriteCatalogueLine(second, "{\"id\":\"ep_undated\",\"session\":\"s_undated\"}");
+
+                IReadOnlyList<ArchiveSessionRecord> merged =
+                    ArchiveCatalogue.ReadAll(new[] { first, second, first, null, string.Empty });
+
+                Assert.That(merged.Select(record => record.Id),
+                    Is.EqualTo(new[] { "s_newest", "s_shared", "s_older", "s_undated" }),
+                    "newest first, the duplicated session once, and the undated one last");
+                Assert.That(merged.First(record => record.Id == "s_shared").Root, Is.EqualTo(first),
+                    "the first root that names a session wins");
+                Assert.That(merged.First(record => record.Id == "s_newest").StartedAt,
+                    Is.EqualTo("2026-10-05T09:00:00Z"),
+                    "a session's start instant keeps the text of its line");
+            }
+            finally
+            {
+                DeleteExportRoot(first);
+                DeleteExportRoot(second);
+            }
+        }
+
+        /// <summary>
+        /// An episode read back from a folder nothing installed still finds its own record: its runtime root is
+        /// what routes the read, not the archive the running session happens to hold.
+        /// </summary>
+        [Test]
+        public void AnEpisodeReadFromAnArchiveReadsItsTracksFromThatRoot()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                string session = store.SessionId;
+                EpisodeMetrics written = TrajectoryEpisode(session, "ep_tracks");
+                List<double[]> expected = written.Trajectories["robot_1"];
+                store.Add(written);
+                MetricsExporter.Export(store, root);
+
+                // Nothing points the store at `root` any more, which is the state of a session read back from
+                // an earlier run: only the episode's own root says where its record went.
+                store.ForgetArchive();
+
+                EpisodeMetrics reread = ArchiveCatalogue.ReadEpisodesBySession(root)[session][0];
+                Assert.That(reread.Trajectories, Is.Empty, "the catalogue line carries no map to fall back on");
+
+                IReadOnlyDictionary<string, List<double[]>> tracks = store.TracksOf(reread);
+
+                Assert.That(tracks.ContainsKey("robot_1"), Is.True,
+                    "the tracks are read from the root the episode was read back from");
+                AssertSamePoints(expected, tracks["robot_1"]);
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        // -- editing what the archive holds ----------------------------------
+
+        /// <summary>
+        /// A session line with no episode behind it is not a session: the rail must not offer a row a reader
+        /// can open and find nothing in.
+        /// </summary>
+        [Test]
+        public void ReadAllHidesASessionTheCatalogueHasNoEpisodeFor()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                WriteSessionLine(root, "s_empty", "2026-10-01T09:00:00Z");
+                WriteSessionLine(root, "s_full", "2026-10-01T10:00:00Z");
+                WriteCatalogueLine(root, "{\"id\":\"ep_full\",\"session\":\"s_full\"}");
+
+                IReadOnlyList<ArchiveSessionRecord> sessions = ArchiveCatalogue.ReadAll(new[] { root });
+
+                Assert.That(sessions.Count, Is.EqualTo(1), "only the session with an episode is a session");
+                Assert.That(sessions[0].Id, Is.EqualTo("s_full"));
+                Assert.That(sessions[0].Episodes, Is.EqualTo(1));
+
+                Assert.That(ArchiveCatalogue.ReadSessions(root).Count, Is.EqualTo(2),
+                    "the raw reader still sees both lines - it is the merged view that hides the empty one");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// Purging rewrites the session file only when it has a line to remove, drops only the lines with no
+        /// episode behind them, and leaves the lines it keeps byte for byte.
+        /// </summary>
+        [Test]
+        public void PurgeEmptySessionsDropsOnlyTheLinesWithNoEpisode()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                string kept = "{\"id\":\"s_full\",\"started_at\":\"2026-10-01T10:00:00Z\",\"schema\":1}\n";
+                WriteSessionLine(root, "s_empty", "2026-10-01T09:00:00Z");
+                File.AppendAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName), kept);
+                WriteCatalogueLine(root, "{\"id\":\"ep_full\",\"session\":\"s_full\"}");
+
+                Assert.That(TrajectoryArchive.PurgeEmptySessions(root), Is.EqualTo(1));
+
+                string after = File.ReadAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName));
+                Assert.That(after, Is.EqualTo(kept), "the line that stays is the bytes it was");
+
+                Assert.That(TrajectoryArchive.PurgeEmptySessions(root), Is.EqualTo(0),
+                    "a second purge has nothing to remove");
+                Assert.That(
+                    File.ReadAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName)), Is.EqualTo(kept),
+                    "a purge with nothing to do writes nothing");
+
+                Assert.That(TrajectoryArchive.PurgeEmptySessions(root + "_missing"), Is.EqualTo(0),
+                    "a root that was never written to reads as nothing to do");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// Deleting one episode touches one line: the lines around it come back exactly as they were, including
+        /// one an older version wrote in another shape, and the session's archive file is not rewritten.
+        /// </summary>
+        [Test]
+        public void DeleteEpisodeRemovesItsLineAndLeavesTheNeighboursByteForByte()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                string legacy = "{\"id\": \"ep_legacy\",\"scenario\":\"old_export\",\"session\":\"s_edit\"}";
+                WriteCatalogueLine(root, legacy);
+                WriteCatalogueLine(root, "{\"id\":\"ep_two\",\"session\":\"s_edit\"}");
+                WriteCatalogueLine(root, "{\"id\":\"ep_three\",\"session\":\"s_edit\"}");
+
+                string archive = Path.Combine(root, TrajectoryArchive.TrajectoriesFolderName, "s_edit.rbt");
+                Directory.CreateDirectory(Path.GetDirectoryName(archive));
+                byte[] record = { 1, 2, 3, 4, 5 };
+                File.WriteAllBytes(archive, record);
+
+                Assert.That(TrajectoryArchive.DeleteEpisode(root, "ep_two"), Is.True);
+
+                Assert.That(
+                    File.ReadAllText(Path.Combine(root, TrajectoryArchive.CatalogueFileName)),
+                    Is.EqualTo(legacy + "\n" + "{\"id\":\"ep_three\",\"session\":\"s_edit\"}\n"),
+                    "only the deleted line left, and the rest is what was written");
+                Assert.That(File.ReadAllBytes(archive), Is.EqualTo(record),
+                    "the trajectory archive is append-only and is never rewritten in place");
+
+                Assert.That(TrajectoryArchive.DeleteEpisode(root, "ep_two"), Is.True,
+                    "an id that is already gone is the state the call promises");
+                Assert.That(TrajectoryArchive.DeleteEpisode(root, "ep_nobody"), Is.True);
+                Assert.That(TrajectoryArchive.DeleteEpisode(root + "_missing", "ep_nobody"), Is.True,
+                    "a root that was never written to holds no episode");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// Deleting a session takes its lines, its session line and its archive, and leaves the session beside
+        /// it - lines and archive both - exactly as it was.
+        /// </summary>
+        [Test]
+        public void DeleteSessionRemovesItsLinesItsArchiveAndItsSessionLine()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                string keepSession = "{\"id\":\"s_keep\",\"started_at\":\"2026-10-01T10:00:00Z\",\"schema\":1}\n";
+                string keepEpisode = "{\"id\":\"ep_keep\",\"session\":\"s_keep\"}\n";
+                WriteSessionLine(root, "s_gone", "2026-10-01T09:00:00Z");
+                File.AppendAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName), keepSession);
+                WriteCatalogueLine(root, "{\"id\":\"ep_gone\",\"session\":\"s_gone\"}");
+                File.AppendAllText(Path.Combine(root, TrajectoryArchive.CatalogueFileName), keepEpisode);
+
+                string folder = Path.Combine(root, TrajectoryArchive.TrajectoriesFolderName);
+                Directory.CreateDirectory(folder);
+                File.WriteAllBytes(Path.Combine(folder, "s_gone.rbt"), new byte[] { 9, 9, 9 });
+                File.WriteAllBytes(Path.Combine(folder, "s_keep.rbt"), new byte[] { 7, 7 });
+
+                Assert.That(TrajectoryArchive.DeleteSession(root, "s_gone"), Is.True);
+
+                Assert.That(
+                    File.ReadAllText(Path.Combine(root, TrajectoryArchive.CatalogueFileName)),
+                    Is.EqualTo(keepEpisode), "the other session's episode line is untouched");
+                Assert.That(
+                    File.ReadAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName)),
+                    Is.EqualTo(keepSession), "the other session's line is untouched");
+                Assert.That(File.Exists(Path.Combine(folder, "s_gone.rbt")), Is.False,
+                    "the session's trajectory archive is gone");
+                Assert.That(File.Exists(Path.Combine(folder, "s_keep.rbt")), Is.True,
+                    "the archive beside it stays");
+
+                Assert.That(TrajectoryArchive.DeleteSession(root, "s_gone"), Is.True,
+                    "deleting a session twice is the same answer");
+                Assert.That(TrajectoryArchive.DeleteSession(root + "_missing", "s_gone"), Is.True);
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// Renaming an episode rewrites its line's <c>name</c> key and nothing else - the id, the scenario and
+        /// the lines around it come back untouched - and an emptied name removes the key rather than writing
+        /// one nothing gave.
+        /// </summary>
+        [Test]
+        public void RenameEpisodeChangesOnlyTheNameKeyOfItsLine()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                string other = "{\"id\":\"ep_other\",\"scenario\":\"corridor\"}\n";
+                WriteCatalogueLine(root, "{\"id\":\"ep_rename\",\"index\":3,\"scenario\":\"corridor\"}");
+                File.AppendAllText(Path.Combine(root, TrajectoryArchive.CatalogueFileName), other);
+
+                Assert.That(TrajectoryArchive.RenameEpisode(root, "ep_rename", "Rue du Port"), Is.True);
+
+                string[] lines = File.ReadAllLines(Path.Combine(root, TrajectoryArchive.CatalogueFileName));
+                JObject renamed = JObject.Parse(lines[0]);
+                Assert.That((string)renamed["name"], Is.EqualTo("Rue du Port"));
+                Assert.That((string)renamed["id"], Is.EqualTo("ep_rename"));
+                Assert.That((int)renamed["index"], Is.EqualTo(3));
+                Assert.That((string)renamed["scenario"], Is.EqualTo("corridor"));
+                Assert.That(lines[1] + "\n", Is.EqualTo(other), "the line beside it is the bytes it was");
+
+                Assert.That(TrajectoryArchive.RenameEpisode(root, "ep_rename", ""), Is.True);
+                JObject cleared = JObject.Parse(
+                    File.ReadAllLines(Path.Combine(root, TrajectoryArchive.CatalogueFileName))[0]);
+                Assert.That(cleared.ContainsKey("name"), Is.False,
+                    "an empty name removes the key instead of writing an empty string");
+
+                Assert.That(TrajectoryArchive.RenameEpisode(root, "ep_nobody", "X"), Is.False,
+                    "there is nothing to rename an id the catalogue does not hold");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// A session is renamed the same way its episodes are, and the name comes back out of the file the
+        /// catalogue reader parses.
+        /// </summary>
+        [Test]
+        public void RenameSessionChangesTheSessionName()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                string other = "{\"id\":\"s_other\",\"started_at\":\"2026-10-01T10:00:00Z\",\"schema\":1}\n";
+                WriteSessionLine(root, "s_named", "2026-10-01T09:00:00Z");
+                File.AppendAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName), other);
+
+                Assert.That(TrajectoryArchive.RenameSession(root, "s_named", "Campus run"), Is.True);
+
+                string[] lines = File.ReadAllLines(Path.Combine(root, TrajectoryArchive.SessionsFileName));
+                Assert.That((string)JObject.Parse(lines[0])["name"], Is.EqualTo("Campus run"));
+                Assert.That(lines[1] + "\n", Is.EqualTo(other), "the line beside it is the bytes it was");
+                Assert.That(ArchiveCatalogue.ReadSessions(root)[0].Name, Is.EqualTo("Campus run"),
+                    "the name comes back out of the file a reader re-reads");
+
+                Assert.That(TrajectoryArchive.RenameSession(root, "s_named", ""), Is.True);
+                Assert.That(
+                    JObject.Parse(File.ReadAllLines(Path.Combine(root, TrajectoryArchive.SessionsFileName))[0])
+                        .ContainsKey("name"),
+                    Is.False);
+
+                Assert.That(TrajectoryArchive.RenameSession(root, "s_nobody", "X"), Is.False);
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// The name reaches the file from two directions: the archive only writes one when there is one, and the
+        /// exporter hands it the name the store holds. A session nobody named carries no key at all.
+        /// </summary>
+        [Test]
+        public void ASessionLineCarriesTheNameOnlyWhenThereIsOne()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                var archive = new TrajectoryArchive(root);
+                archive.EnsureSessionLine("s_named", "2026-10-01T09:00:00Z", "Campus run");
+                archive.EnsureSessionLine("s_bare", "2026-10-01T10:00:00Z");
+
+                string[] lines = File.ReadAllLines(Path.Combine(root, TrajectoryArchive.SessionsFileName));
+                Assert.That((string)JObject.Parse(lines[0])["name"], Is.EqualTo("Campus run"));
+                Assert.That(JObject.Parse(lines[1]).ContainsKey("name"), Is.False,
+                    "a session nobody named carries no name key");
+            }
+            finally
+            {
+                DeleteExportRoot(root);
+            }
+
+            string export = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.SessionName = "Benchmark 01";
+                store.Add(Synthetic("ep_named"));
+
+                MetricsExporter.Export(store, export);
+
+                string line = File.ReadAllText(Path.Combine(export, TrajectoryArchive.SessionsFileName));
+                Assert.That((string)JObject.Parse(line)["name"], Is.EqualTo("Benchmark 01"),
+                    "the exporter hands the session's name to the line it writes");
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
+                DeleteExportRoot(export);
+            }
+        }
+
+        /// <summary>
+        /// The disk carries the name the user wrote and nothing else: an episode nobody named has no name key,
+        /// and clearing a name puts it back in that state rather than writing the label the interface computes.
+        /// </summary>
+        [Test]
+        public void AnEpisodeNobodyNamedCarriesNoNameOnDisk()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                store.Add(TrajectoryEpisode("s_bare", "ep_bare"));
+                MetricsExporter.Export(store, root);
+
+                string path = Path.Combine(root, TrajectoryArchive.CatalogueFileName);
+                Assert.That(JObject.Parse(File.ReadAllLines(path)[0]).ContainsKey("name"), Is.False,
+                    "an un-named episode carries no name key, and never the computed 01_default label");
+
+                Assert.That(TrajectoryArchive.RenameEpisode(root, "ep_bare", "Dock"), Is.True);
+                Assert.That((string)JObject.Parse(File.ReadAllLines(path)[0])["name"], Is.EqualTo("Dock"));
+
+                Assert.That(TrajectoryArchive.RenameEpisode(root, "ep_bare", null), Is.True);
+                Assert.That(JObject.Parse(File.ReadAllLines(path)[0]).ContainsKey("name"), Is.False,
+                    "clearing a name puts the line back where a never-named one is");
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// The tab purges a bare session line as it reads the folder, so the file stops naming a session with
+        /// nothing in it - and the store forgets the archive it had announced that session to, or the next
+        /// export would never write the line again.
+        /// </summary>
+        [Test]
+        public void TheSessionListPurgesABareLineAndForgetsTheArchive()
+        {
+            string root = NewExportRoot();
+            try
+            {
+                string kept = "{\"id\":\"s_full\",\"started_at\":\"2026-10-01T10:00:00Z\",\"schema\":1}\n";
+                WriteSessionLine(root, "s_bare", "2026-10-01T09:00:00Z");
+                File.AppendAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName), kept);
+                WriteCatalogueLine(root, "{\"id\":\"ep_full\",\"session\":\"s_full\"}");
+
+                MetricsStore.Instance.UseArchive(root);
+                Assert.That(MetricsStore.Instance.Archive, Is.Not.Null, "the store is pointed at the folder");
+
+                var session = new AnalysisSession(MetricsStore.Instance, new[] { root });
+
+                Assert.That(session.SavedSessions.Count, Is.EqualTo(1));
+                Assert.That(session.SavedSessions[0].Id, Is.EqualTo("s_full"));
+                Assert.That(
+                    File.ReadAllText(Path.Combine(root, TrajectoryArchive.SessionsFileName)), Is.EqualTo(kept),
+                    "the bare line is gone and the line with an episode behind it is untouched");
+                Assert.That(MetricsStore.Instance.Archive, Is.Null,
+                    "an archive that lost a session line has to announce it afresh next time");
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
+                DeleteExportRoot(root);
+            }
+        }
+
+        /// <summary>
+        /// An episode is exported with its points whether it still holds them or has to read them back: the
+        /// single-file export of an archived episode carries its trajectory in clear, and the episode in the
+        /// tab is not filled in by the write.
+        /// </summary>
+        [Test]
+        public void AnEpisodeReadBackFromAnArchiveExportsWithItsTrajectoryInClear()
+        {
+            string archiveRoot = NewExportRoot();
+            string exportRoot = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                string session = store.SessionId;
+                EpisodeMetrics written = TrajectoryEpisode(session, "ep_clear");
+                List<double[]> expected = written.Trajectories["robot_1"];
+                store.Add(written);
+                MetricsExporter.Export(store, archiveRoot);
+
+                store.ForgetArchive();
+
+                EpisodeMetrics reread = ArchiveCatalogue.ReadEpisodesBySession(archiveRoot)[session][0];
+                Assert.That(reread.Trajectories, Is.Empty, "the catalogue line carries no map to fall back on");
+
+                MetricsExportReport report = MetricsExporter.ExportEpisode(store, reread, exportRoot);
+
+                Assert.That(report.Directory, Is.EqualTo(exportRoot));
+                Assert.That(report.SessionFile, Is.EqualTo(Path.Combine(exportRoot, "episode_ep_clear.json")));
+
+                JObject document = ParseDocument(File.ReadAllText(report.SessionFile));
+                Assert.That(document.ContainsKey("trajectory_ref"), Is.False,
+                    "a single-file export carries the points, not a pointer to a file beside it");
+                Assert.That((string)document["id"], Is.EqualTo("ep_clear"));
+
+                var points = (JArray)document["trajectories"]["robot_1"];
+                Assert.That(points.Count, Is.EqualTo(expected.Count));
+                Assert.That((double)points[1][1], Is.EqualTo(expected[1][1]).Within(1e-6));
+
+                Assert.That(reread.Trajectories, Is.Empty,
+                    "the export does not fill the episode the tab holds");
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
+                DeleteExportRoot(archiveRoot);
+                DeleteExportRoot(exportRoot);
+            }
+        }
+
+        /// <summary>
+        /// The session document is the one a reader parses without Unity: the keys the format promises, one
+        /// entry per episode, and each entry carrying its trajectory in clear even when it came back from an
+        /// archive.
+        /// </summary>
+        [Test]
+        public void ASessionExportIsReadableAndCarriesEveryTrajectoryInClear()
+        {
+            string archiveRoot = NewExportRoot();
+            string exportRoot = NewExportRoot();
+            try
+            {
+                MetricsStore store = MetricsStore.Instance;
+                string session = store.SessionId;
+                const string startedAt = "2026-10-01T09:00:00Z";
+                store.Add(TrajectoryEpisode(session, "ep_one"));
+                store.Add(TrajectoryEpisode(session, "ep_two"));
+                MetricsExporter.Export(store, archiveRoot);
+
+                store.ForgetArchive();
+
+                IReadOnlyList<EpisodeMetrics> episodes = ArchiveCatalogue.ReadEpisodesBySession(archiveRoot)[session];
+                Assert.That(episodes.Count, Is.EqualTo(2));
+
+                MetricsExportReport report =
+                    MetricsExporter.ExportSession(episodes, session, startedAt, exportRoot);
+
+                Assert.That(report.SessionFile, Is.EqualTo(Path.Combine(exportRoot, "session_" + session + ".json")));
+
+                string text = File.ReadAllText(report.SessionFile);
+                JObject document = ParseDocument(text);
+                Assert.That((string)document["session"], Is.EqualTo(session));
+                Assert.That((string)document["started_at"], Is.EqualTo(startedAt));
+                Assert.That(text, Does.Contain("\"started_at\": \"2026-10-01T09:00:00Z\""),
+                    "the instant keeps the text of the line it came from");
+                Assert.That(document.ContainsKey("exported_at"), Is.True);
+                Assert.That((int)document["episode_count"], Is.EqualTo(2));
+
+                var written = (JArray)document["episodes"];
+                Assert.That(written.Count, Is.EqualTo(2));
+                foreach (JToken episode in written)
+                {
+                    Assert.That(episode["trajectories"]?["robot_1"], Is.Not.Null,
+                        "every episode of the file carries its trajectory in clear");
+                    Assert.That(((JArray)episode["trajectories"]["robot_1"]).Count, Is.EqualTo(3));
+                    Assert.That(episode["trajectory_ref"], Is.Null);
+                }
+            }
+            finally
+            {
+                MetricsStore.Instance.ForgetArchive();
+                DeleteExportRoot(archiveRoot);
+                DeleteExportRoot(exportRoot);
+            }
+        }
+
         // -- helpers --------------------------------------------------------
 
         private static string NewExportRoot()
             => Path.Combine(Path.GetTempPath(), "robotsnap_metrics_" + System.Guid.NewGuid().ToString("N"));
+
+        /// <summary>
+        /// One line of a root's <c>sessions.jsonl</c>, written by hand: the merge cases care about which root
+        /// names which session, and going through an export would drag two sessions into the same folder.
+        /// </summary>
+        private static void WriteSessionLine(string root, string id, string startedAt)
+        {
+            Directory.CreateDirectory(root);
+            File.AppendAllText(
+                Path.Combine(root, TrajectoryArchive.SessionsFileName),
+                "{\"id\":\"" + id + "\",\"started_at\":\"" + startedAt + "\",\"schema\":1}\n");
+        }
+
+        /// <summary>
+        /// One hand-written catalogue line, so a case can lay out the exact bytes - including a shape an older
+        /// version wrote - and check that an edit leaves the lines around it untouched.
+        /// </summary>
+        private static void WriteCatalogueLine(string root, string line)
+        {
+            Directory.CreateDirectory(root);
+            File.AppendAllText(Path.Combine(root, TrajectoryArchive.CatalogueFileName), line + "\n");
+        }
+
+        /// <summary>
+        /// Parses an exported document the way the archive reader does: a string that looks like an instant
+        /// stays the text it is, instead of the parser turning it into a date and printing it back in the
+        /// machine's culture - which would make a test read a value the file does not hold.
+        /// </summary>
+        private static JObject ParseDocument(string text)
+            => JsonConvert.DeserializeObject<JObject>(
+                text, new JsonSerializerSettings { DateParseHandling = DateParseHandling.None });
 
         private static void DeleteExportRoot(string root)
         {

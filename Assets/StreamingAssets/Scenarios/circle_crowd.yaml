@@ -1,883 +1,412 @@
-scenario_info:
-  name: 'Circle Crowd'
+scenario_info: 
+  name: Circle Crowd
   type: Custom
-  description: 'Ten pedestrians circulating clockwise on a four-metre ring; the robot crosses the ring from one side of the room to the other.'
-  version: '1.0'
+  description: "Ten pedestrians each cross the ring straight to the diametrically opposite point, so they all meet at the centre; the robot also crosses the ring from one side of the room to the other."
+  version: 1.0
   author: RobotSNAP
-  created: '2026-09-30 17:00'
-  tags:
-    - Basic
-    - Indoor
-    - Crowd
-    - Circle
+  created: "2026-09-30 17:00"
+  tags: 
+  - Basic
+  - Circle
+  - Crowd
+  - Indoor
   map: basic/crowd
-  location: ''
+  location: null
   dataset: null
-  preview: ''
-  robot_type: jackal
-  duration: 0.0
-points:
-  robot_start:
-    x: -6.8
-    y: 0.0
-    z: 0.0
-    yaw: 90.0
+  preview: ""
+  robot_type: Jackal
+  duration: 0
+points: 
+  robot_start: 
+    x: -4.07
+    y: 0
+    z: 0
+    yaw: 90
     center: null
     size: null
-  robot_goal:
-    x: 6.8
-    y: 0.0
-    z: 0.0
+  robot_goal: 
+    x: 4.03
+    y: 0
+    z: 0
     yaw: null
     center: null
     size: null
-  ring_0:
-    x: 4.0
-    y: 0.0
-    z: 0.0
+  ring_0: 
+    x: 4
+    y: 0
+    z: 0
     yaw: null
     center: null
     size: null
-  ring_1:
+  ring_1: 
     x: 3.236
-    y: 0.0
+    y: 0
     z: 2.351
     yaw: null
     center: null
     size: null
-  ring_2:
+  ring_2: 
     x: 1.236
-    y: 0.0
+    y: 0
     z: 3.804
     yaw: null
     center: null
     size: null
-  ring_3:
+  ring_3: 
     x: -1.236
-    y: 0.0
+    y: 0
     z: 3.804
     yaw: null
     center: null
     size: null
-  ring_4:
+  ring_4: 
     x: -3.236
-    y: 0.0
+    y: 0
     z: 2.351
     yaw: null
     center: null
     size: null
-  ring_5:
-    x: -4.0
-    y: 0.0
-    z: 0.0
+  ring_5: 
+    x: -4
+    y: 0
+    z: 0
     yaw: null
     center: null
     size: null
-  ring_6:
+  ring_6: 
     x: -3.236
-    y: 0.0
+    y: 0
     z: -2.351
     yaw: null
     center: null
     size: null
-  ring_7:
+  ring_7: 
     x: -1.236
-    y: 0.0
+    y: 0
     z: -3.804
     yaw: null
     center: null
     size: null
-  ring_8:
+  ring_8: 
     x: 1.236
-    y: 0.0
+    y: 0
     z: -3.804
     yaw: null
     center: null
     size: null
-  ring_9:
+  ring_9: 
     x: 3.236
-    y: 0.0
+    y: 0
     z: -2.351
     yaw: null
     center: null
     size: null
-robots:
-  - id: robot_1
-    type: jackal
-    start: robot_start
-    goal: robot_goal
-    waypoints: null
-    behavior: normal
-    speed: 1.2
+robots: 
+- id: robot_1
+  type: jackal
+  start: robot_start
+  goal: robot_goal
+  waypoints: null
+  behavior: normal
+  speed: 1.2
+  speed_range: null
+  start_yaw_range: null
 robot: null
-humans:
-  - id: ring_walker_0
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_0
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_1
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_1
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_1
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_2
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_2
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_2
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_3
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_3
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_3
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_4
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_4
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_4
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_5
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_5
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_5
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_6
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_6
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_6
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_7
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_7
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_7
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_8
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_9
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_8
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_8
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_9
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_0
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
-  - id: ring_walker_9
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: ring_9
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: ring_0
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals:
-      - type: point
-        ref: ring_1
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_2
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_3
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_4
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_5
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_6
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_7
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-      - type: point
-        ref: ring_8
-        position: null
-        zone: null
-        target: null
-        radius: 0.0
-    end_behavior: loop
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
+humans: 
+- id: ring_walker_0
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_0
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_5
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_1
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_1
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_6
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_2
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_2
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_7
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_3
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_3
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_8
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_4
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_4
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_9
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_6
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_6
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_1
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_7
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_7
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_2
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_8
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_8
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_3
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null
+- id: ring_walker_9
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: ring_9
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: ring_4
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: disappear
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null

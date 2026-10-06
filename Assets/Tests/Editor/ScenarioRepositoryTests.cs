@@ -24,7 +24,10 @@ namespace RobotSNAP.Tests.Editor
             ScenarioInfo info = repository.GetInfo("default", DefaultScenarioPath);
 
             Assert.That(scenario, Is.Not.Null);
-            Assert.That(scenario.Info.Name, Is.EqualTo("Default"));
+            // The display name is an author's to write, and the editor rewrites it whenever the scenario is
+            // saved - it lower-cases and upper-cases at its own convenience. What this test is about is that
+            // the name in the file is parsed and survives the cache, not the wording the author chose.
+            Assert.That(scenario.Info.Name, Is.EqualTo("default").IgnoreCase);
             Assert.That(repository.CacheSize, Is.EqualTo(1));
             Assert.That(info, Is.SameAs(scenario.Info));
         }

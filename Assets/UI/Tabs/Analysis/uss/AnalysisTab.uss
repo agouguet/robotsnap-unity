@@ -60,7 +60,7 @@
     white-space: normal;
 }
 
-.analysis-export-button {
+.analysis-folder-button {
     height: 28px;
     padding-left: 14px;
     padding-right: 14px;
@@ -72,27 +72,8 @@
     -unity-font-style: bold;
 }
 
-.analysis-export-button:hover {
+.analysis-folder-button:hover {
     background-color: var(--accent-soft);
-}
-
-/* Clearing is irreversible, so it never wears the accent an ordinary action wears. */
-.analysis-clear-button {
-    height: 28px;
-    margin-left: 8px;
-    padding-left: 14px;
-    padding-right: 14px;
-    background-color: transparent;
-    color: rgb(200, 60, 70);
-    border-width: 1px;
-    border-color: rgb(200, 60, 70);
-    border-radius: 4px;
-    font-size: 12px;
-    -unity-font-style: bold;
-}
-
-.analysis-clear-button:hover {
-    background-color: rgba(200, 60, 70, 0.12);
 }
 
 /* ---- body ---------------------------------------------------- */
@@ -108,7 +89,7 @@
 }
 
 .analysis-list-host {
-    width: 306px;
+    width: 264px;
     flex-shrink: 0;
     margin-right: 16px;
     min-height: 0;
@@ -137,7 +118,7 @@
 
 .analysis-detail-column {
     flex-direction: column;
-    width: 420px;
+    width: 400px;
     min-width: 340px;
     flex-shrink: 0;
     margin-left: 16px;
@@ -157,21 +138,25 @@
     margin-left: 0;
 }
 
-/* Only one of the two is shown at a time; whichever it is takes the whole column. */
-.analysis-episode-detail-host {
+/* The detail and the session overview are stacked: the metrics of the run on top, and the reading of the
+   whole session it belongs to underneath. The two together are taller than a window on a small screen, so the
+   column scrolls rather than clipping whichever of them is at the bottom. */
+.analysis-detail-scroll {
     flex-grow: 1;
     min-height: 0;
+}
+
+.analysis-episode-detail-host {
+    flex-shrink: 0;
 }
 
 .analysis-session-summary-host {
-    flex-grow: 1;
-    min-height: 0;
+    flex-shrink: 0;
 }
 
-/* The whole band belongs to the overview when several episodes are checked, so its two halves read across
-   rather than down: seven tiles and an outcome mix stacked in a very wide column would each take a whole
-   line for one number. The summary and its host are the same element, which is why both classes sit on the
-   same selector here. */
+/* With no episode selected the overview is all that is left of the band, so its two halves read across rather
+   than down: seven tiles and an outcome mix stacked in a very wide column would each take a whole line for one
+   number. The summary and its host are the same element, which is why both classes sit on the same selector. */
 .analysis-session-summary.analysis-summary-wide {
     flex-direction: row;
     align-items: flex-start;
@@ -202,13 +187,24 @@
 }
 
 .analysis-list-header {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     flex-shrink: 0;
     padding: 10px 12px;
     border-bottom-width: 1px;
     border-bottom-color: var(--border-color);
+}
+
+.analysis-list-caption {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 2px;
+}
+
+/* The session's name is the heading of the list; the caption under it says what the rows are. */
+.analysis-list-name {
+    margin-bottom: 2px;
 }
 
 .analysis-list-title {
@@ -222,32 +218,83 @@
     color: var(--text-secondary);
 }
 
-/* ---- list toolbar and filters -------------------------------- */
+/* ---- panel headings and their pencil ------------------------- */
 
-.analysis-list-toolbar {
+/* The heading of a panel that names what the panel is about: the session beside the list, the episode above
+   its trajectory. It is a size up from the captions around it, because a name is what a reader navigates by,
+   and the pencil sits at its end so the gesture is where the name is. */
+.analysis-title {
     flex-direction: row;
     align-items: center;
-    flex-shrink: 0;
-    padding: 8px 10px 0 10px;
+    min-width: 0;
 }
 
-.analysis-list-tool {
-    height: 22px;
-    margin-right: 6px;
-    padding-left: 8px;
-    padding-right: 8px;
-    background-color: transparent;
-    color: var(--text-secondary);
-    border-width: 1px;
-    border-color: var(--border-color);
-    border-radius: 3px;
-    font-size: 10px;
-}
-
-.analysis-list-tool:hover {
-    background-color: var(--button-hover);
+.analysis-title-label {
+    flex-grow: 1;
+    min-width: 0;
+    font-size: 15px;
+    -unity-font-style: bold;
     color: var(--text-primary);
+    overflow: hidden;
+    white-space: nowrap;
+    -unity-text-overflow-position: end;
 }
+
+/* The field the pencil swaps in stands exactly where the label stood, so nothing shifts when editing starts. */
+.analysis-title-field {
+    flex-grow: 1;
+    margin-bottom: 0;
+}
+
+.analysis-title-field > .unity-base-field__label {
+    display: none;
+}
+
+.analysis-title-field > .unity-text-input {
+    font-size: 15px;
+    -unity-font-style: bold;
+    min-height: 22px;
+    padding-left: 6px;
+    padding-right: 6px;
+    background-color: var(--bg-secondary);
+    border-width: 1px;
+    border-color: var(--accent);
+    border-radius: 3px;
+}
+
+.analysis-title-pencil {
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0;
+    background-color: transparent;
+    background-image: resource("Icons/pencil");
+    border-width: 0;
+    border-radius: 3px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--text-secondary);
+}
+
+.analysis-title-pencil:hover {
+    background-color: var(--button-hover);
+    -unity-background-image-tint-color: var(--text-primary);
+}
+
+/* Where a heading hangs in a section heading row, beside whatever the section already puts there. */
+.analysis-title-host {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-right: 4px;
+}
+
+/* The run the trajectory belongs to, kept a little clear of the outcome chip beside it. */
+.analysis-episode-name {
+    margin-right: 4px;
+}
+
+/* ---- list filters -------------------------------------------- */
 
 .analysis-list-filters {
     flex-direction: column;
@@ -336,22 +383,9 @@
     background-color: var(--accent-glow);
 }
 
-.analysis-episode-row.checked {
-    border-color: var(--accent-soft);
-}
-
 .analysis-row-top {
     flex-direction: row;
     align-items: center;
-}
-
-.analysis-row-check {
-    flex-shrink: 0;
-    margin-right: 6px;
-}
-
-.analysis-row-check > .unity-toggle__label {
-    display: none;
 }
 
 .analysis-row-label {
@@ -449,6 +483,13 @@
     flex-direction: column;
     flex-grow: 1;
     min-width: 0;
+}
+
+/* What a section heading puts on its right: what the section is about, and how it ended. */
+.analysis-section-trailing {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
 }
 
 .analysis-section-title {
@@ -829,4 +870,170 @@
     margin-left: 8px;
     font-size: 10px;
     color: var(--text-secondary);
+}
+
+/* ================================================================
+   SESSIONS RAIL
+   The first column of the tab: every session the reader can open,
+   the one running now first, each line carrying the shape of its
+   results. It is a column rather than the dropdown it replaced so
+   that several sessions can be compared before any of them is
+   opened - which is the only reason the bar is on the line at all.
+   ================================================================ */
+
+.analysis-rail-host {
+    width: 220px;
+    flex-shrink: 0;
+    margin-right: 16px;
+    min-height: 0;
+}
+
+.analysis-rail {
+    flex-grow: 1;
+    flex-direction: column;
+    min-height: 0;
+    background-color: var(--bg-secondary);
+    border-width: 1px;
+    border-color: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.analysis-rail-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--border-color);
+}
+
+.analysis-rail-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--text-primary);
+}
+
+.analysis-rail-count {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.analysis-rail-controls {
+    flex-direction: column;
+    flex-shrink: 0;
+    padding: 8px 10px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--border-color);
+}
+
+/* A rail control says what it does through its placeholder or its choices, not through a caption above it. */
+.analysis-rail-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin-bottom: 6px;
+    font-size: 11px;
+}
+
+.analysis-rail-field > .unity-base-field__label {
+    display: none;
+}
+
+.analysis-rail-sort > .unity-base-field__input {
+    font-size: 11px;
+    min-height: 20px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.analysis-rail-search > .unity-text-input {
+    font-size: 11px;
+    min-height: 20px;
+    padding-left: 6px;
+    padding-right: 6px;
+    background-color: var(--bg-primary);
+    border-width: 1px;
+    border-color: var(--border-color);
+    border-radius: 3px;
+}
+
+.analysis-rail-scroll {
+    flex-grow: 1;
+    min-height: 0;
+}
+
+.analysis-rail-rows {
+    flex-direction: column;
+    padding: 6px;
+}
+
+.analysis-rail-row {
+    flex-direction: column;
+    padding: 7px 9px;
+    margin-bottom: 4px;
+    background-color: var(--card-bg);
+    border-width: 1px;
+    border-color: var(--border-color);
+    border-radius: 4px;
+}
+
+.analysis-rail-row:hover {
+    background-color: var(--button-bg);
+}
+
+.analysis-rail-row.selected {
+    border-color: var(--accent);
+    background-color: var(--accent-glow);
+}
+
+.analysis-rail-row-top {
+    flex-direction: row;
+    align-items: center;
+}
+
+.analysis-rail-row-name {
+    flex-grow: 1;
+    min-width: 0;
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--text-primary);
+    overflow: hidden;
+    white-space: nowrap;
+    -unity-text-overflow-position: end;
+}
+
+.analysis-rail-row-date,
+.analysis-rail-row-count,
+.analysis-rail-row-tally {
+    margin-top: 2px;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+/* The goal/other tally is the one line of the three that a reader scans, so it carries the brighter colour. */
+.analysis-rail-row-tally {
+    color: var(--text-primary);
+}
+
+/* Segments of one session's results, side by side: the track keeps the empty colour behind them and the fills
+   keep the outcome colours, so the rail's bar and the overview's bar cannot drift apart. */
+.analysis-rail-bar {
+    flex-direction: row;
+    flex-grow: 0;
+    height: 6px;
+    margin-top: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.analysis-rail-bar > .analysis-bar-fill {
+    height: 6px;
+}
+
+.analysis-rail-empty {
+    padding: 12px 10px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: normal;
 }

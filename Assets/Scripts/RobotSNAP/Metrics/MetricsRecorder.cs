@@ -191,6 +191,54 @@ namespace RobotSNAP.Metrics
             if (_instance == this) _instance = null;
         }
 
+        /// <summary>
+        /// A session that ends without a stop - the editor's play mode was left, a build was closed while the
+        /// robot was still driving - is still a run that happened, and its trajectory is the part of it no
+        /// later moment can reconstruct. The open episode is closed where it really was and the store is
+        /// exported, so "the trajectory is never lost" holds for the run in progress and not only for the one
+        /// that had already reached its outcome. A run that stopped before this has nothing open, and the
+        /// export then simply finds every episode already written.
+        /// </summary>
+        private void OnApplicationQuit()
+        {
+            CloseOpenEpisodeForShutdown();
+        }
+
+        /// <summary>
+        /// A pause is where a mobile build is killed without ever seeing a quit, so the same guaranteed write
+        /// happens there.
+        /// </summary>
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+                CloseOpenEpisodeForShutdown();
+        }
+
+        /// <summary>
+        /// Files the run in progress as one the session stopped, then writes everything the session holds. An
+        /// accumulator that never sampled a step is not a run: it is dropped rather than filed as an empty
+        /// trajectory. Nothing here throws, because an application going away is not a place to fail.
+        /// </summary>
+        private void CloseOpenEpisodeForShutdown()
+        {
+            try
+            {
+                if (_accumulator != null)
+                {
+                    if (_episodeSampled)
+                        Finish(MetricsContract.OutcomeStopped, _lastWorldSeconds);
+                    else
+                        Discard();
+                }
+
+                MetricsExporter.Export(MetricsStore.Instance);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[MetricsRecorder] saving the session on exit failed: {exception.Message}");
+            }
+        }
+
         #endregion
 
         #region Sampling

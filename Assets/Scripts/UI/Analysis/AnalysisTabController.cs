@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using RobotSNAP.Metrics;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -8,13 +9,13 @@ using UnityEditor;
 #endif
 
 /// <summary>
-/// Wires the Analysis tab: the episode list, the trajectory map, and the panel beside it - the metrics of the
-/// one episode the list points at, or the overview of the episodes the reader checked - all reading the
-/// session's <see cref="MetricsStore"/>.
+/// Wires the Analysis tab: the sessions rail, the episode list, the trajectory map and the panel beside it -
+/// the metrics of the episode the list points at, under the overview of the session it belongs to - all
+/// reading the session's <see cref="MetricsStore"/> and the archives it reads back.
 ///
 /// The tab owns what the views only report as intents: choosing the export folder, asking before a delete, and
-/// deciding which of the two right-hand panels the selection asks for. Keeping that here is what lets the list
-/// and the panels stay views of the data instead of owners of a policy.
+/// where a renamed title goes. Keeping that here is what lets the rail and the list stay views of the data
+/// instead of owners of a policy.
 ///
 /// It initializes lazily, the first time the tab is opened, because that is when the UXML template is
 /// instantiated into the UIDocument - the same reason the other tab controllers wait for their own view.
@@ -29,19 +30,21 @@ public class AnalysisTabController : MonoBehaviour
     private VisualElement _page;
     private AnalysisSession _session;
     private AnalysisEpisodeList _list;
+    private AnalysisSessionRail _rail;
     private AnalysisEpisodeMap _map;
     private AnalysisSessionSummary _summary;
     private AnalysisEpisodeDetail _detail;
     private AnalysisEpisodeReplay _replay;
     private AnalysisTimeline _timeline;
+    private AnalysisEditableTitle _episodeTitle;
     private VisualElement _mapPanel;
     private VisualElement _detailColumn;
     private VisualElement _timelineHost;
     private VisualElement _detailHost;
     private VisualElement _summaryHost;
-    private Button _exportButton;
-    private Button _clearButton;
-    private Label _exportStatus;
+    private Button _openFolderButton;
+    private Label _status;
+    private string _statusSource;
 
     private void OnEnable()
     {
@@ -100,12 +103,13 @@ public class AnalysisTabController : MonoBehaviour
 
         var missing = new List<string>();
         _page = Require<VisualElement>(root, "AnalysisPage", missing);
-        _exportButton = Require<Button>(root, "AnalysisExportButton", missing);
-        _clearButton = Require<Button>(root, "AnalysisClearButton", missing);
-        _exportStatus = Require<Label>(root, "AnalysisExportStatus", missing);
+        _openFolderButton = Require<Button>(root, "AnalysisOpenFolderButton", missing);
+        _status = Require<Label>(root, "AnalysisExportStatus", missing);
+        VisualElement railHost = Require<VisualElement>(root, "AnalysisSessionRailHost", missing);
         VisualElement listHost = Require<VisualElement>(root, "AnalysisEpisodeListHost", missing);
         VisualElement detailHost = Require<VisualElement>(root, "AnalysisEpisodeDetailHost", missing);
         VisualElement summaryHost = Require<VisualElement>(root, "AnalysisSessionSummaryHost", missing);
+        VisualElement episodeTitleHost = Require<VisualElement>(root, "AnalysisEpisodeTitleHost", missing);
         _mapPanel = Require<VisualElement>(root, "AnalysisMapPanel", missing);
         _detailColumn = Require<VisualElement>(root, "AnalysisDetailColumn", missing);
         VisualElement timelineHost = Require<VisualElement>(root, "AnalysisTimelineHost", missing);
@@ -122,10 +126,13 @@ public class AnalysisTabController : MonoBehaviour
         _timelineHost = timelineHost;
 
         _map = new AnalysisEpisodeMap(root);
+        _rail = new AnalysisSessionRail();
+        railHost.Add(_rail);
         _list = new AnalysisEpisodeList();
         listHost.Add(_list);
         _detail = new AnalysisEpisodeDetail(detailHost);
         _summary = new AnalysisSessionSummary(summaryHost);
+        _episodeTitle = BuildEpisodeTitle(episodeTitleHost);
 
         // The cursor the map, the numbers and the frise all read: one object, so the three of them can only
         // ever be talking about the same instant.
@@ -133,13 +140,18 @@ public class AnalysisTabController : MonoBehaviour
         _timeline = new AnalysisTimeline();
         _timelineHost.Add(_timeline);
 
+        _rail.SessionPicked += OnSessionPicked;
+        _rail.SessionExportRequested += OnExportSessionRequested;
+        _rail.SessionDeleteRequested += OnDeleteSessionRequested;
         _list.EpisodeSelected += OnEpisodeSelected;
         _list.ExportRequested += OnExportEpisodeRequested;
         _list.DeleteRequested += OnDeleteEpisodeRequested;
-        _list.SelectionChanged += RefreshView;
+        _list.SessionRenameRequested += OnSessionRenameRequested;
+        _episodeTitle.RenameRequested += OnEpisodeRenameRequested;
         _session.Changed += RefreshView;
         _map.Bind(_session);
         _map.SetReplay(_replay);
+        _rail.Bind(_session);
         _list.Bind(_session);
         _detail.Bind(_session);
         _detail.SetReplay(_replay);
@@ -151,8 +163,7 @@ public class AnalysisTabController : MonoBehaviour
         _timeline.TogglePlayRequested += OnTogglePlayRequested;
         RefreshView();
 
-        _exportButton.clicked += OnExportSessionClicked;
-        _clearButton.clicked += OnClearSessionClicked;
+        _openFolderButton.clicked += OnOpenFolderClicked;
         _initialized = true;
     }
 
@@ -197,71 +208,118 @@ public class AnalysisTabController : MonoBehaviour
     }
 
     /// <summary>
-    /// Puts the right panel in the mode the selection asks for. The rule is the checkbox count, and the three
-    /// cases are the three things a reader does with a session:
+    /// Reads one line of the Sessions rail. A null id is the session the recorder is still appending to, and
+    /// any other id is a session read back from the archive - the same two destinations the dropdown this rail
+    /// replaced offered, asked for by id rather than by the caption the line happens to print.
+    /// </summary>
+    private void OnSessionPicked(string sessionId)
+    {
+        if (_session == null)
+            return;
+
+        if (sessionId == null)
+            _session.ShowRunning();
+        else
+            _session.ShowSaved(sessionId);
+    }
+
+    /// <summary>Names the session on screen after what the reader typed in the episodes heading.</summary>
+    private void OnSessionRenameRequested(string name)
+    {
+        RenameSession(_session, name);
+    }
+
+    /// <summary>Names the episode the trajectory panel is about after what the reader typed in its heading.</summary>
+    private void OnEpisodeRenameRequested(string name)
+    {
+        RenameEpisode(_session, _session?.Selected?.Id, name);
+    }
+
+    /// <summary>
+    /// Puts the right-hand column in the shape the selection asks for: the episode the list points at, metric
+    /// by metric, beside its trajectory and under the frise that replays it - and, whatever the selection is,
+    /// the overview of the whole session beneath it.
     ///
-    ///   none checked    the overview of the whole session - what the tab opens on, and what "Clear selection"
-    ///                   goes back to
-    ///   one checked     that episode, metric by metric, beside its own trajectory and under the frise that
-    ///                   replays it. A click on a row is a single selection, so this is the case a reader
-    ///                   meets first
-    ///   several checked the overview again - scoped to the checked episodes, averaging the subset the reader
-    ///                   asked about - and it takes the whole band: there is no one trajectory to draw for
-    ///                   several runs at once, and a map of one of them would say the reader asked about a run
-    ///                   the summary beside it is not describing
-    ///
-    /// The overview keeps its own caption of what it averaged, so a scoped reading can never be mistaken for
-    /// the session's.
+    /// The overview is not scoped to the episode on screen: the per-outcome counts are what a reader follows
+    /// across a session, and an average over one run would be that run rather than the session. When no
+    /// episode is selected there is no trajectory to draw, so the column takes the band and the overview is
+    /// what is left to read.
     /// </summary>
     private void RefreshView()
     {
         if (_session == null || _summary == null)
             return;
 
-        IReadOnlyList<EpisodeMetrics> checkedEpisodes = _list.CheckedEpisodes;
-        int checkedCount = checkedEpisodes.Count;
-        bool episodeMode = ShowsEpisodeDetail(checkedCount);
-        bool trajectories = ShowsTrajectoryMap(checkedCount);
+        RefreshSourceChrome();
 
-        _detailHost.style.display = episodeMode ? DisplayStyle.Flex : DisplayStyle.None;
-        _summaryHost.style.display = episodeMode ? DisplayStyle.None : DisplayStyle.Flex;
-        _timelineHost.style.display = episodeMode ? DisplayStyle.Flex : DisplayStyle.None;
-        _mapPanel.style.display = trajectories ? DisplayStyle.Flex : DisplayStyle.None;
+        EpisodeMetrics selected = _session.Selected;
+        bool hasEpisode = selected != null;
+
+        _detailHost.style.display = hasEpisode ? DisplayStyle.Flex : DisplayStyle.None;
+        _summaryHost.style.display = DisplayStyle.Flex;
+        _timelineHost.style.display = hasEpisode ? DisplayStyle.Flex : DisplayStyle.None;
+        _mapPanel.style.display = hasEpisode ? DisplayStyle.Flex : DisplayStyle.None;
         // With the map gone the detail column is all that is left beside the list, so it takes the band.
-        _detailColumn.EnableInClassList("analysis-detail-column-wide", !trajectories);
+        _detailColumn.EnableInClassList("analysis-detail-column-wide", !hasEpisode);
         // And in a band that wide the overview reads across rather than down: the tiles answer "how well" and
         // the outcome mix answers "how did it end", which are two columns of the same reading, not a stack.
-        _summaryHost.EnableInClassList("analysis-summary-wide", !trajectories);
+        _summaryHost.EnableInClassList("analysis-summary-wide", !hasEpisode);
 
-        if (episodeMode)
-        {
-            _replay.Show(_session.Selected);
-            return;
-        }
+        _episodeTitle?.Show(hasEpisode ? AnalysisFormatting.EpisodeLabel(selected) : null);
 
-        // No cursor outside the one-episode view. What is left of the map draws the whole run the list points
-        // at, and a frise would be replaying a run the panels beside it are not describing.
-        _replay.Show(null);
-
-        if (checkedCount == 0)
-            _summary.Show(_session.Episodes, AnalysisSessionSummary.WholeSession);
-        else
-            _summary.Show(checkedEpisodes, AnalysisSessionSummary.SelectionScope(checkedCount));
+        // No cursor outside the one-episode view: a frise would be replaying a run the panels beside it are
+        // not describing.
+        _replay.Show(hasEpisode ? selected : null);
+        _summary.Show(_session.Episodes, AnalysisSessionSummary.WholeSession);
     }
 
     /// <summary>
-    /// Which of the two right-hand panels a selection asks for. Exactly one checked episode is a single
-    /// selection - that run, beside its own trajectory. Nothing checked is the whole session, and several
-    /// checked are those several: both of those are the overview, scoped to what the reader asked about.
+    /// Makes the status line follow the source on screen: the running session by name, and a saved one by when
+    /// it started and how many episodes it holds. It is only rewritten when the source actually changes, so
+    /// the path "Open folder" just left there survives a click on a row.
     /// </summary>
-    public static bool ShowsEpisodeDetail(int checkedCount) => checkedCount == 1;
+    private void RefreshSourceChrome()
+    {
+        _openFolderButton.tooltip = "Open the folder the sessions are written to";
+
+        string source = SourceStatus(_session);
+        if (string.Equals(source, _statusSource, StringComparison.Ordinal))
+            return;
+
+        _statusSource = source;
+        _status.text = source;
+    }
 
     /// <summary>
-    /// Whether the band still carries a trajectory map. Only a single checked episode has one trajectory to
-    /// draw: nothing checked opens on the session overview alone, and several checked is an overview of
-    /// several runs at once - neither has one run to put beside the summary, so both take the whole band.
+    /// What the status line says about the session being displayed: the running one by name, and a saved one
+    /// by when it started and how many episodes it holds - the same caption the rail offers it under.
     /// </summary>
-    public static bool ShowsTrajectoryMap(int checkedCount) => checkedCount == 1;
+    public static string SourceStatus(AnalysisSession session)
+    {
+        if (session == null)
+            return string.Empty;
+
+        if (session.IsRunningSession)
+            return AnalysisSession.RunningSessionLabel;
+
+        foreach (ArchiveSessionRecord record in session.SavedSessions)
+        {
+            if (string.Equals(record.Id, session.SourceId, StringComparison.Ordinal))
+                return "Saved session " + AnalysisSessionRail.SavedSessionLabel(record);
+        }
+
+        return "Saved session " + session.SourceId;
+    }
+
+    /// <summary>
+    /// Which of the two right-hand panels the tab shows. With no multi-selection left, both questions are the
+    /// same one: is there an episode selected at all? An episode is the whole of what the trajectory map and
+    /// the metric panel can describe, and nothing selected leaves the session overview alone in the column.
+    /// </summary>
+    public static bool ShowsEpisodeDetail(bool hasEpisode) => hasEpisode;
+
+    /// <summary>Whether the band carries a trajectory map, which it does exactly while an episode is selected.</summary>
+    public static bool ShowsTrajectoryMap(bool hasEpisode) => hasEpisode;
 
     // -- replay ---------------------------------------------------------------
 
@@ -295,33 +353,34 @@ public class AnalysisTabController : MonoBehaviour
 
     private void OnTogglePlayRequested() => _replay?.TogglePlay();
 
-    // -- export ---------------------------------------------------------------
+    // -- the export folder ----------------------------------------------------
 
-    /// <summary>Exports the whole session to a folder the user picks, and names where it landed.</summary>
-    private void OnExportSessionClicked()
+    /// <summary>
+    /// Opens the folder the sessions are written to in the file manager of the machine, and names it in the
+    /// status line either way: the path is what a reader copies out of the tab when nothing opens - a missing
+    /// file manager, a remote session, a folder this build is not allowed to show.
+    /// </summary>
+    private void OnOpenFolderClicked()
     {
-        if (_session == null)
-            return;
-
-        ChooseExportFolder(folder =>
+        string path = AnalysisExportFolder.Last;
+        try
         {
-            MetricsExportReport report = MetricsExporter.Export(_session.Store, folder);
-            int episodes = _session.Episodes.Count;
-            _exportStatus.text = Describe(report, $"{episodes} episode{(episodes == 1 ? "" : "s")}");
-        });
-    }
-
-    /// <summary>Exports the selected episode on its own, to the folder the user picks.</summary>
-    private void OnExportEpisodeRequested(string id)
-    {
-        if (_session == null)
-            return;
-
-        ChooseExportFolder(folder =>
+            // The folder is where the next export goes, so a reader who opens it before ever exporting gets
+            // the folder that export would create rather than an error about it not being there yet.
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception)
         {
-            MetricsExportReport report = MetricsExporter.ExportEpisode(_session.Store, id, folder);
-            _exportStatus.text = Describe(report, "episode " + id);
-        });
+            // A folder that cannot be made is still worth naming: the status line is the one thing this
+            // button can always leave behind.
+        }
+
+        _status.text = path;
+#if UNITY_EDITOR
+        EditorUtility.RevealInFinder(path);
+#else
+        Application.OpenURL("file://" + path);
+#endif
     }
 
     /// <summary>
@@ -359,70 +418,340 @@ public class AnalysisTabController : MonoBehaviour
     /// <see cref="MetricsExporter"/>; this only reports its outcome.
     /// </summary>
     private static string Describe(MetricsExportReport report, string subject)
-        => string.IsNullOrEmpty(report.Directory)
-            ? "Export failed: " + (MetricsExporter.LastError ?? "unknown error")
+    {
+        if (string.IsNullOrEmpty(report.Directory))
+            return "Export failed: " + (MetricsExporter.LastError ?? "unknown error");
+
+        return report.UsedFallback
+            ? $"Exported {subject} to {report.Directory} (the requested folder was not writable)"
             : $"Exported {subject} to {report.Directory}";
+    }
 
-    // -- destructive actions --------------------------------------------------
-
-    /// <summary>
-    /// Empties the session, after a confirmation that says so. The dialog is reused rather than rebuilt
-    /// because the same warning applies to deleting one episode, and a reader who has met one has met the
-    /// other.
-    /// </summary>
-    private void OnClearSessionClicked()
+    /// <summary>Exports one episode on its own, to the folder the user picks.</summary>
+    private void OnExportEpisodeRequested(string id)
     {
         if (_session == null)
             return;
 
-        int episodes = _session.Episodes.Count;
-        ConfirmationDialog dialog = new ConfirmationDialog(
-            "Clear this session?",
-            episodes == 0
-                ? "The session holds no episode to clear."
-                : $"This removes all {episodes} episode{(episodes == 1 ? "" : "s")} of the session from the " +
-                  "Analysis list. It cannot be undone. Export first if you want to keep the records.",
-            "Clear session",
-            alternateText: "Export first");
-
-        dialog.Alternate += () => ExportBeforeDestructiveAction(
-            dialog, folder => MetricsExporter.Export(_session.Store, folder));
-        dialog.Confirmed += () =>
+        ChooseExportFolder(folder =>
         {
-            _session.Store.Clear();
-            _session.Refresh();
-        };
-
-        if (episodes == 0)
-        {
-            dialog.ConfirmButton.SetEnabled(false);
-            dialog.AlternateButton.SetEnabled(false);
-        }
-
-        dialog.Show(_page);
+            MetricsExportReport report = ExportEpisode(_session, id, folder);
+            _status.text = Describe(report, "episode " + id);
+        });
     }
 
-    /// <summary>Deletes the selected episode, after the same confirmation the session clear uses.</summary>
+    /// <summary>Exports one whole session - the running one when the rail publishes no id - to a picked folder.</summary>
+    private void OnExportSessionRequested(string sessionId)
+    {
+        if (_session == null)
+            return;
+
+        ChooseExportFolder(folder =>
+        {
+            MetricsExportReport report = ExportSession(_session, sessionId, folder);
+            IReadOnlyList<EpisodeMetrics> episodes = sessionId == null
+                ? _session.EpisodesOf(_session.RunningSessionId)
+                : _session.EpisodesOf(sessionId);
+            int count = episodes.Count;
+            _status.text = Describe(report, $"{count} episode{(count == 1 ? "" : "s")}");
+        });
+    }
+
+    // -- the actions a card carries -------------------------------------------
+
+    /// <summary>
+    /// Writes one session to disk as one document. A null id is the session running now; a saved one is read
+    /// from the record the archive named it under, because that record is where its start instant lives.
+    /// </summary>
+    public static MetricsExportReport ExportSession(AnalysisSession session, string sessionId, string folder)
+    {
+        if (session == null)
+            return default;
+
+        if (string.IsNullOrEmpty(sessionId) ||
+            string.Equals(sessionId, session.Store.SessionId, StringComparison.Ordinal))
+        {
+            return MetricsExporter.ExportSession(
+                session.EpisodesOf(session.RunningSessionId),
+                session.Store.SessionId,
+                session.Store.StartedAt,
+                folder);
+        }
+
+        ArchiveSessionRecord record = RecordOf(session, sessionId);
+        if (record == null)
+            return default;
+
+        return MetricsExporter.ExportSession(session.EpisodesOf(record.Id), record.Id, record.StartedAt, folder);
+    }
+
+    /// <summary>
+    /// Exports one episode of the session on screen. The episode is handed over as the object it is - the
+    /// store's copy or the one read back from an archive - because the trajectory of a replayed run is read
+    /// through the archive the episode names.
+    /// </summary>
+    public static MetricsExportReport ExportEpisode(AnalysisSession session, string episodeId, string folder)
+    {
+        if (session == null)
+            return default;
+
+        EpisodeMetrics episode = FindEpisode(session, episodeId);
+        return episode != null
+            ? MetricsExporter.ExportEpisode(session.Store, episode, folder)
+            : MetricsExporter.ExportEpisode(session.Store, episodeId, folder);
+    }
+
+    /// <summary>
+    /// Deletes one episode, from everywhere the tab can see it: the store while it is the recorder's, and
+    /// every folder that holds its record - the one it was read back from when the episode names it, and the
+    /// folders the tab reads while it is one the recorder is still appending to.
+    /// </summary>
+    public static void DeleteEpisode(AnalysisSession session, string episodeId)
+    {
+        if (session == null || string.IsNullOrEmpty(episodeId))
+            return;
+
+        EpisodeMetrics episode = FindEpisode(session, episodeId);
+        if (episode == null)
+            return;
+
+        // Removing an id the store does not hold is not a failure: it is an episode read back from an archive.
+        session.Store.Remove(episodeId);
+        foreach (string root in RootsOf(session, episode))
+            TrajectoryArchive.DeleteEpisode(root, episodeId);
+
+        session.Refresh();
+        FallBackToRunning(session);
+    }
+
+    /// <summary>
+    /// Deletes a whole session and everything it filed: its catalogue lines, its session line and its
+    /// trajectory archive. A null id means the session running now, which is emptied as well - the id it
+    /// leaves behind is a new session rather than the one whose files just went. When the session on screen is
+    /// the one that disappeared, the tab goes back to the running session rather than staying on nothing.
+    /// </summary>
+    public static void DeleteSession(AnalysisSession session, string sessionId)
+    {
+        if (session == null)
+            return;
+
+        bool running = string.IsNullOrEmpty(sessionId) ||
+                       string.Equals(sessionId, session.Store.SessionId, StringComparison.Ordinal);
+
+        if (running)
+        {
+            foreach (string root in session.ArchiveRoots)
+                TrajectoryArchive.DeleteSession(root, session.Store.SessionId);
+
+            session.Store.Clear();
+            session.Store.ForgetArchive();
+            session.Refresh();
+            return;
+        }
+
+        foreach (string root in RootsOfSession(session, sessionId))
+            TrajectoryArchive.DeleteSession(root, sessionId);
+
+        session.Refresh();
+        FallBackToRunning(session);
+    }
+
+    /// <summary>
+    /// Names the session on screen, or takes the name away again when <paramref name="name"/> is empty. The
+    /// running session keeps its name in the store - it has no document yet - and the folders it was exported
+    /// to carry it in their session line; a session read back from an archive is renamed in the one folder
+    /// that named it.
+    /// </summary>
+    public static void RenameSession(AnalysisSession session, string name)
+    {
+        if (session == null)
+            return;
+
+        string value = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+
+        if (session.IsRunningSession)
+        {
+            session.Store.SessionName = value ?? string.Empty;
+            foreach (string root in session.ArchiveRoots)
+                TrajectoryArchive.RenameSession(root, session.Store.SessionId, value);
+        }
+        else
+        {
+            ArchiveSessionRecord record = RecordOf(session, session.SourceId);
+            if (record != null)
+                TrajectoryArchive.RenameSession(record.Root, record.Id, value);
+        }
+
+        session.Refresh();
+    }
+
+    /// <summary>
+    /// Names one episode, or takes its name away again when <paramref name="name"/> is empty. The name always
+    /// lands on the copy the tab holds; it also goes to the archive the episode was read from, and - for a run
+    /// the recorder is still appending to - to the folders it may already have been exported to, where the
+    /// catalogue line is what a later reader would otherwise open under the old name. A run that has not been
+    /// archived yet keeps the name in memory, and the next export writes it.
+    /// </summary>
+    public static void RenameEpisode(AnalysisSession session, string episodeId, string name)
+    {
+        if (session == null)
+            return;
+
+        EpisodeMetrics episode = FindEpisode(session, episodeId);
+        if (episode == null)
+            return;
+
+        string value = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        episode.Name = value;
+
+        foreach (string root in RootsOf(session, episode))
+            TrajectoryArchive.RenameEpisode(root, episode.Id, value);
+
+        session.Refresh();
+    }
+
+    /// <summary>
+    /// Builds the episode heading the trajectory panel heads with: the run's name, and the pencil that renames
+    /// it. Public and static so that heading can be laid out - and read - without a live UIDocument.
+    /// </summary>
+    public static AnalysisEditableTitle BuildEpisodeTitle(VisualElement host)
+    {
+        var title = new AnalysisEditableTitle();
+        title.AddToClassList("analysis-episode-name");
+        host?.Add(title);
+        return title;
+    }
+
+    /// <summary>The episode of the session on screen whose id this is, or null when it is not one of them.</summary>
+    private static EpisodeMetrics FindEpisode(AnalysisSession session, string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            return null;
+
+        foreach (EpisodeMetrics episode in session.Episodes)
+        {
+            if (string.Equals(episode.Id, id, StringComparison.Ordinal))
+                return episode;
+        }
+        return null;
+    }
+
+    /// <summary>The session record an id names, or null when the archive the tab reads does not hold it.</summary>
+    private static ArchiveSessionRecord RecordOf(AnalysisSession session, string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId))
+            return null;
+
+        foreach (ArchiveSessionRecord record in session.SavedSessions)
+        {
+            if (string.Equals(record.Id, sessionId, StringComparison.Ordinal))
+                return record;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Goes back to the session the recorder is still appending to when the one on screen has just
+    /// disappeared - a session that was deleted, or one whose last episode went and took its line with it.
+    /// Staying on a session the rail no longer offers would leave the panels describing nothing.
+    /// </summary>
+    private static void FallBackToRunning(AnalysisSession session)
+    {
+        if (!session.IsRunningSession && !session.HasSavedSession(session.SourceId))
+            session.ShowRunning();
+    }
+
+    /// <summary>
+    /// The folders an episode's record can live in. One read back from an archive names its own folder, and
+    /// that folder wins: the tab may read several, and only the one that wrote the record is where it sits.
+    /// An episode the recorder still holds has no folder of its own yet, so every folder the tab reads is
+    /// asked - the one the reader last exported to, and the fallback an unwritable one was redirected to.
+    /// </summary>
+    private static IEnumerable<string> RootsOf(AnalysisSession session, EpisodeMetrics episode)
+    {
+        if (!string.IsNullOrEmpty(episode.ArchiveRoot))
+        {
+            yield return episode.ArchiveRoot;
+            yield break;
+        }
+
+        foreach (string root in session.ArchiveRoots)
+            yield return root;
+    }
+
+    /// <summary>
+    /// The folders a session's files can live in: the one its record names while the tab still lists it, and
+    /// every folder the tab reads when the record went with an earlier delete.
+    /// </summary>
+    private static IEnumerable<string> RootsOfSession(AnalysisSession session, string sessionId)
+    {
+        ArchiveSessionRecord record = RecordOf(session, sessionId);
+        if (record != null)
+        {
+            yield return record.Root;
+            yield break;
+        }
+
+        foreach (string root in session.ArchiveRoots)
+            yield return root;
+    }
+
+    // -- destructive actions --------------------------------------------------
+
+    /// <summary>
+    /// Deletes one episode, after a confirmation that says what goes and where from. The episode is looked up
+    /// again on confirmation rather than captured: the reader may have moved to another session while the
+    /// question was up, so the answer is about the session they are looking at.
+    /// </summary>
     private void OnDeleteEpisodeRequested(string id)
     {
-        EpisodeMetrics episode = _session?.Store.Get(id);
+        EpisodeMetrics episode = _session == null ? null : FindEpisode(_session, id);
         if (episode == null)
             return;
 
         ConfirmationDialog dialog = new ConfirmationDialog(
             "Delete this episode?",
-            $"This removes episode {AnalysisFormatting.EpisodeLabel(episode)} from the session. It cannot be " +
-            "undone. Export first if you want to keep it.",
+            $"This removes episode {AnalysisFormatting.EpisodeLabel(episode)} from the session and deletes its " +
+            "record and trajectory from the folder it was saved in. It cannot be undone. Export first if you " +
+            "want to keep it.",
             "Delete episode",
             alternateText: "Export first");
 
         dialog.Alternate += () => ExportBeforeDestructiveAction(
-            dialog, folder => MetricsExporter.ExportEpisode(_session.Store, id, folder));
-        dialog.Confirmed += () =>
-        {
-            _session.Store.Remove(id);
-            _session.Refresh();
-        };
+            dialog, folder => ExportEpisode(_session, id, folder));
+        dialog.Confirmed += () => DeleteEpisode(_session, id);
+
+        dialog.Show(_page);
+    }
+
+    /// <summary>
+    /// Deletes one whole session, after a confirmation that says in counts what leaves the disk. A null id is
+    /// the session running now, whose episodes are dropped from the store as well - the two halves of the same
+    /// session a reader asked to be rid of.
+    /// </summary>
+    private void OnDeleteSessionRequested(string sessionId)
+    {
+        if (_session == null)
+            return;
+
+        bool running = sessionId == null;
+        int episodes = running
+            ? _session.EpisodesOf(_session.RunningSessionId).Count
+            : _session.EpisodesOf(sessionId).Count;
+
+        string subject = running ? "the session running now" : "this session";
+        ConfirmationDialog dialog = new ConfirmationDialog(
+            "Delete this session?",
+            $"This deletes {subject} and all {episodes} of its episode{(episodes == 1 ? "" : "s")} from disk, " +
+            "trajectories included. It cannot be undone." +
+            (running ? " The episode list is emptied as well." : string.Empty),
+            "Delete session",
+            alternateText: "Export first",
+            destructive: true);
+
+        dialog.Alternate += () => ExportBeforeDestructiveAction(
+            dialog, folder => ExportSession(_session, running ? null : sessionId, folder));
+        dialog.Confirmed += () => DeleteSession(_session, sessionId);
 
         dialog.Show(_page);
     }
@@ -445,7 +774,7 @@ public class AnalysisTabController : MonoBehaviour
                     return;
                 }
 
-                _exportStatus.text = status;
+                _status.text = status;
                 dialog.Dismiss();
             },
             dialog);
@@ -499,17 +828,23 @@ public class AnalysisTabController : MonoBehaviour
 
     private void Detach()
     {
-        if (_exportButton != null)
-            _exportButton.clicked -= OnExportSessionClicked;
-        if (_clearButton != null)
-            _clearButton.clicked -= OnClearSessionClicked;
+        if (_openFolderButton != null)
+            _openFolderButton.clicked -= OnOpenFolderClicked;
+        if (_rail != null)
+        {
+            _rail.SessionPicked -= OnSessionPicked;
+            _rail.SessionExportRequested -= OnExportSessionRequested;
+            _rail.SessionDeleteRequested -= OnDeleteSessionRequested;
+        }
         if (_list != null)
         {
             _list.EpisodeSelected -= OnEpisodeSelected;
             _list.ExportRequested -= OnExportEpisodeRequested;
             _list.DeleteRequested -= OnDeleteEpisodeRequested;
-            _list.SelectionChanged -= RefreshView;
+            _list.SessionRenameRequested -= OnSessionRenameRequested;
         }
+        if (_episodeTitle != null)
+            _episodeTitle.RenameRequested -= OnEpisodeRenameRequested;
         if (_session != null)
             _session.Changed -= RefreshView;
 
@@ -523,21 +858,26 @@ public class AnalysisTabController : MonoBehaviour
         }
 
         _list?.Dispose();
+        _rail?.Dispose();
         _map?.Dispose();
         _detail?.Dispose();
         _timeline?.Dispose();
 
         _list = null;
+        _rail = null;
         _map = null;
         _summary = null;
         _detail = null;
         _replay = null;
         _timeline = null;
+        _episodeTitle = null;
         _mapPanel = null;
         _detailColumn = null;
         _timelineHost = null;
         _detailHost = null;
         _summaryHost = null;
+        _openFolderButton = null;
+        _status = null;
         _session = null;
         _page = null;
         _initialized = false;

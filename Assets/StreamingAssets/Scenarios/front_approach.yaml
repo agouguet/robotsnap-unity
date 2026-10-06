@@ -1,86 +1,92 @@
-scenario_info:
-  name: 'Front Approach'
+scenario_info: 
+  name: Front Approach
   type: Custom
-  description: 'Robot and pedestrian walking head-on in a narrow two-way corridor.'
-  version: '1.0'
+  description: Robot and pedestrian walking head-on in a narrow two-way corridor.
+  version: 1.0
   author: RobotSNAP
-  created: '2026-09-30 17:00'
-  tags:
-    - Basic
-    - Indoor
-    - Corridor
-    - Frontal
+  created: "2026-09-30 17:00"
+  tags: 
+  - Basic
+  - Corridor
+  - Frontal
+  - Indoor
   map: basic/frontal
-  location: ''
+  location: null
   dataset: null
-  preview: ''
-  robot_type: jackal
-  duration: 0.0
-points:
-  robot_start:
-    x: -9.0
-    y: 0.0
-    z: 0.0
-    yaw: 90.0
+  preview: ""
+  robot_type: Jackal
+  duration: 0
+points: 
+  robot_start: 
+    x: -9
+    y: 0
+    z: 0
+    yaw: 90
     center: null
     size: null
-  robot_goal:
-    x: 9.0
-    y: 0.0
-    z: 0.0
+  robot_goal: 
+    x: 9
+    y: 0
+    z: 0
     yaw: null
     center: null
     size: null
-  oncoming_start:
+  oncoming_start: 
     x: 9.5
-    y: 0.0
-    z: 0.0
-    yaw: -90.0
+    y: 0
+    z: 0
+    yaw: -90
     center: null
     size: null
-  oncoming_goal:
+  oncoming_goal: 
     x: -9.5
-    y: 0.0
-    z: 0.0
+    y: 0
+    z: 0
     yaw: null
     center: null
     size: null
-robots:
-  - id: robot_1
-    type: jackal
-    start: robot_start
-    goal: robot_goal
-    waypoints: null
-    behavior: normal
-    speed: 1.2
+robots: 
+- id: robot_1
+  type: jackal
+  start: robot_start
+  goal: robot_goal
+  waypoints: null
+  behavior: normal
+  speed: 1.2
+  speed_range: null
+  start_yaw_range: null
 robot: null
-humans:
-  - id: oncoming
-    count: 1
-    spawn_window: 0.0
-    spawn:
-      type: point
-      ref: oncoming_start
-      position: null
-      zone: null
-      formation: null
-      formation_parameter: 0.0
-      spacing: 1.5
-      relative_to: null
-    goal:
-      type: point
-      ref: oncoming_goal
-      position: null
-      zone: null
-      target: null
-      radius: 0.0
-    goals: null
-    end_behavior: stay
-    group: null
-    movement_controller:
-      type: SFM
-      sfm_params: null
-    behavior: normal
-    speed: 1.0
-    color: null
-    personality: null
+humans: 
+- id: oncoming
+  count: 1
+  count_range: null
+  spawn_window: 0
+  spawn: 
+    type: point
+    ref: oncoming_start
+    position: null
+    zone: null
+    formation: pair
+    formation_parameter: 0
+    spacing: 1.5
+    spacing_range: null
+    relative_to: null
+  goal: 
+    type: point
+    ref: oncoming_goal
+    position: null
+    zone: null
+    target: null
+    radius: 0
+  goals: null
+  end_behavior: stay
+  group: null
+  movement_controller: 
+    type: SFM
+    sfm_params: null
+  behavior: normal
+  speed: 1
+  speed_range: null
+  spawn_window_range: null
+  color: null
+  personality: null

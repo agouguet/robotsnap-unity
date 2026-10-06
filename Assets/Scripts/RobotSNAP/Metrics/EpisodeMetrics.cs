@@ -57,6 +57,16 @@ namespace RobotSNAP.Metrics
     public sealed class EpisodeMetrics
     {
         [JsonProperty("id")] public string Id;
+        /// <summary>
+        /// Name the user gave this episode, empty or null while it has none.
+        ///
+        /// It is display metadata and nothing else: the interface falls back to the computed
+        /// <c>01_default</c> label while it is empty, and that computed label is never written here. A reader
+        /// has to be able to tell a renamed episode from one nobody touched, and a disk that carried the
+        /// fallback would erase the difference. A null name is not written at all, so an episode nobody named
+        /// carries no <c>name</c> key - the same state clearing a name leaves behind.
+        /// </summary>
+        [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)] public string Name;
         [JsonProperty("index")] public int Index;
         [JsonProperty("scenario")] public string Scenario;
         [JsonProperty("robot")] public string Robot;
@@ -100,6 +110,17 @@ namespace RobotSNAP.Metrics
         /// </summary>
         [JsonProperty("trajectory_ref")] public TrajectoryRef TrajectoryRef;
         [JsonProperty("session")] public string Session;
+
+        /// <summary>
+        /// Folder the record behind <see cref="TrajectoryRef"/> lives in, when the episode was read back from
+        /// an archive.
+        ///
+        /// The field is runtime-only on purpose: it names a folder of this machine, so writing it into the
+        /// catalogue would make an export that was copied elsewhere point at a path that machine never had.
+        /// A reader that replayed an episode from disk sets it, which is what routes the trajectory read to the
+        /// right archive instead of the one the live store happens to hold.
+        /// </summary>
+        [JsonIgnore] public string ArchiveRoot;
 
         /// <summary>Sentinel a distance metric carries when the episode held no human to measure against.</summary>
         public const double NoHumanDistance = -1.0;

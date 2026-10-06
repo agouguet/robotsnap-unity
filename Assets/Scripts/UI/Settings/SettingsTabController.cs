@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using RobotSNAP;
 using RobotSNAP.Core;
+using RobotSNAP.Metrics;
 using RobotSNAP.ROS;
 using RobotSNAP.UI;
 using UnityEngine;
@@ -83,6 +84,10 @@ public class SettingsTabController : MonoBehaviour
     private Label _rosStatus;
     private Button _resetTopicsButton;
 
+    private Button _clearCacheButton;
+    private Label _dataSummary;
+    private Label _dataStatus;
+
     /// <summary>The page itself, which is what a confirmation is shown over.</summary>
     private VisualElement _page;
 
@@ -127,6 +132,7 @@ public class SettingsTabController : MonoBehaviour
         RefreshProfileList();
         FillSimulationSection();
         FillRosSection();
+        FillDataSection();
     }
 
     private void TryInitialize()
@@ -172,6 +178,9 @@ public class SettingsTabController : MonoBehaviour
         _rosPreview = Require<Label>(root, "RosPreviewLabel", missing);
         _rosStatus = Require<Label>(root, "RosStatusLabel", missing);
         _resetTopicsButton = Require<Button>(root, "ResetTopicsButton", missing);
+        _clearCacheButton = Require<Button>(root, "ClearCacheButton", missing);
+        _dataSummary = Require<Label>(root, "DataSummaryLabel", missing);
+        _dataStatus = Require<Label>(root, "DataStatusLabel", missing);
         if (missing.Count > 0)
         {
             Debug.LogError($"[SettingsTabController] Missing UI elements: {string.Join(", ", missing)}");
@@ -197,6 +206,7 @@ public class SettingsTabController : MonoBehaviour
         RefreshProfileList();
         FillSimulationSection();
         FillRosSection();
+        FillDataSection();
     }
 
     private UIDocument ResolveDocument()
@@ -332,6 +342,7 @@ public class SettingsTabController : MonoBehaviour
         _resetButton.clicked += OnResetClicked;
         _saveProfileButton.clicked += OnSaveProfileClicked;
         _resetTopicsButton.clicked += OnResetTopicsClicked;
+        _clearCacheButton.clicked += OnClearCacheClicked;
         _profileNameField.RegisterCallback<KeyDownEvent>(OnProfileNameKeyDown);
     }
 
@@ -1040,6 +1051,175 @@ public class SettingsTabController : MonoBehaviour
     {
         _rosStatus.text = message ?? string.Empty;
         _rosStatus.EnableInClassList("is-error", error);
+    }
+
+    // -- the saved analysis data --------------------------------------------------------------------
+
+    /// <summary>
+    /// The folders the Data card counts and clears: the one the Analysis tab exports to, and the fallback an
+    /// unwritable project folder is redirected to. They are the two roots that tab reads, so what this card
+    /// counts - and what its button removes - is exactly what the Analysis tab can show.
+    /// </summary>
+    public static IReadOnlyList<string> DataRoots()
+    {
+        var roots = new List<string>();
+        AddRoot(roots, AnalysisExportFolder.Last);
+        AddRoot(roots, MetricsExporter.FallbackRoot);
+        return roots;
+    }
+
+    private static void AddRoot(List<string> roots, string root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return;
+
+        string trimmed = root.Trim();
+        for (int index = 0; index < roots.Count; index++)
+        {
+            if (string.Equals(roots[index], trimmed, StringComparison.Ordinal))
+                return;
+        }
+
+        roots.Add(trimmed);
+    }
+
+    /// <summary>
+    /// What the Data card states about the saved analysis data: how many sessions a reader could open, how many
+    /// episode lines there are, and how much the trajectories weigh. The session count comes from the
+    /// catalogue - a session line with no episode behind it is not a session a reader can open - while the
+    /// line counts and the bytes come from a scan of the folders, because a file the catalogue does not name is
+    /// still on disk and still costs the reader space.
+    /// </summary>
+    public static string DataSummaryText(int sessions, TrajectoryArchive.ArchiveSummary summary)
+    {
+        if (sessions == 0 && summary.IsEmpty)
+            return "Nothing saved.";
+
+        return $"{sessions} session{(sessions == 1 ? "" : "s")}, " +
+               $"{summary.Episodes} episode{(summary.Episodes == 1 ? "" : "s")}, " +
+               $"{Mebibytes(summary.Bytes)} MiB on disk";
+    }
+
+    /// <summary>
+    /// The phrase a clear states before and after it acts: what is on disk, in counts and in the unit a reader
+    /// can picture. Built statically, so the sentence can be read - and tested - without a UI in the loop. It
+    /// keeps the wording the Analysis tab's own delete used, so the same act reads the same way on both pages.
+    /// </summary>
+    public static string CacheSummary(TrajectoryArchive.ArchiveSummary summary)
+        => $"{summary.Sessions} session{(summary.Sessions == 1 ? "" : "s")}, " +
+           $"{summary.Episodes} episode{(summary.Episodes == 1 ? "" : "s")}, " +
+           $"{Mebibytes(summary.Bytes)} MiB on disk";
+
+    /// <summary>
+    /// What one answered clear leaves in the status line: what went, or that there was nothing to remove, or
+    /// that the removal itself failed. Split out so the wording is testable without a dialog.
+    /// </summary>
+    public static string CacheOutcome(bool cleared, string folders, TrajectoryArchive.ArchiveSummary summary)
+    {
+        if (!cleared)
+            return $"Clear failed under {folders}";
+
+        return summary.IsEmpty
+            ? $"No saved data under {folders}"
+            : $"Deleted {CacheSummary(summary)} under {folders}";
+    }
+
+    /// <summary>How the confirmation names the folders a clear covers.</summary>
+    public static string FoldersLabel(IReadOnlyList<string> roots)
+    {
+        if (roots == null || roots.Count == 0)
+            return "(no folder)";
+
+        return string.Join(" and ", roots);
+    }
+
+    private static string Mebibytes(long bytes)
+        => (bytes / (1024.0 * 1024.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Counts what is saved and writes it on the card. Read from disk each time the page is shown rather than
+    /// cached: the Analysis tab writes to these folders while this tab is open, and a number that was right
+    /// when the page was built would be a lie by the time the reader acts on it.
+    /// </summary>
+    private void FillDataSection()
+    {
+        if (!_initialized)
+            return;
+
+        IReadOnlyList<string> roots = DataRoots();
+        TrajectoryArchive.ArchiveSummary total = ScanTotal(roots);
+        int sessions = ArchiveCatalogue.ReadAll(roots).Count;
+        _dataSummary.text = DataSummaryText(sessions, total);
+    }
+
+    private static TrajectoryArchive.ArchiveSummary ScanTotal(IReadOnlyList<string> roots)
+    {
+        int sessions = 0;
+        int episodes = 0;
+        long bytes = 0;
+        foreach (string root in roots)
+        {
+            TrajectoryArchive.ArchiveSummary summary = TrajectoryArchive.Scan(root);
+            sessions += summary.Sessions;
+            episodes += summary.Episodes;
+            bytes += summary.Bytes;
+        }
+
+        return new TrajectoryArchive.ArchiveSummary(sessions, episodes, bytes);
+    }
+
+    /// <summary>
+    /// Removes every saved record under the folders the Analysis tab reads, after a confirmation that says in
+    /// counts what is about to disappear. The archive the store holds has to forget the sessions it announced,
+    /// or the next export would never write a session line again over a folder the reader just emptied.
+    /// </summary>
+    private void OnClearCacheClicked()
+    {
+        if (!_initialized)
+            return;
+
+        IReadOnlyList<string> roots = DataRoots();
+        string folders = FoldersLabel(roots);
+        TrajectoryArchive.ArchiveSummary total = ScanTotal(roots);
+
+        // Nothing saved is not a question: there is no record to lose, so the card reports the folder is
+        // already empty instead of asking the reader to confirm a clear that would do nothing.
+        if (total.IsEmpty)
+        {
+            FillDataSection();
+            SetDataStatus(CacheOutcome(true, folders, total), false);
+            return;
+        }
+
+        var dialog = new ConfirmationDialog(
+            "Clear the saved analysis data?",
+            $"{CacheSummary(total)} under {folders}. This is irreversible: the sessions, the catalogue and " +
+            "the trajectories are removed from disk.",
+            "Clear cache",
+            destructive: true);
+
+        dialog.Confirmed += () =>
+        {
+            bool cleared = true;
+            foreach (string root in roots)
+                cleared &= TrajectoryArchive.DeleteAll(root);
+
+            // The archive remembers which sessions it announced so an export does not repeat a session line.
+            // Once that line is gone the archive has to forget it too, or the next export would never write it
+            // again and the folder would stay missing a session it holds episodes for.
+            MetricsStore.Instance.ForgetArchive();
+
+            FillDataSection();
+            SetDataStatus(CacheOutcome(cleared, folders, total), !cleared);
+        };
+
+        dialog.Show(_page);
+    }
+
+    private void SetDataStatus(string message, bool error)
+    {
+        _dataStatus.text = message ?? string.Empty;
+        _dataStatus.EnableInClassList("is-error", error);
     }
 
     /// <summary>

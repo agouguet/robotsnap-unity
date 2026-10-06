@@ -7,35 +7,28 @@ scenario_info:
   created: "2026-09-17 15:43"
   tags: []
   map: easy/10434d6006b686598c8acab6847766e7
-  location: ""
+  location: null
   dataset: null
   preview: ""
-  robot_type: TurtleBot4
+  robot_type: Freight
   duration: 0
-points: 
-  robot_start: 
-    x: 10.34
-    y: 0
-    z: 15.07
-    yaw: 0
-    center: null
-    size: null
-  robot_goal: 
-    x: 40
-    y: 0
-    z: 15
-    yaw: null
-    center: null
-    size: null
-robot: 
+points: {}
+robots: 
+- id: robot_1
+  type: freight
   start: robot_start
   goal: robot_goal
   waypoints: null
   behavior: normal
   speed: 1.2
+  speed_range: null
+  start_yaw_range: null
+robot: null
 humans: 
 - id: human_route_1
   count: 40
+  count_range: null
+  spawn_window: 0
   spawn: 
     type: random
     ref: null
@@ -56,6 +49,7 @@ humans:
     formation: scatter
     formation_parameter: 0
     spacing: 1.5
+    spacing_range: null
     relative_to: null
   goal: 
     type: random
@@ -82,10 +76,14 @@ humans:
   movement_controller: null
   behavior: normal
   speed: 1
+  speed_range: null
+  spawn_window_range: null
   color: null
   personality: null
 - id: human_route_2
   count: 40
+  count_range: null
+  spawn_window: 0
   spawn: 
     type: random
     ref: null
@@ -106,6 +104,7 @@ humans:
     formation: scatter
     formation_parameter: 0
     spacing: 1.5
+    spacing_range: null
     relative_to: null
   goal: 
     type: random
@@ -132,5 +131,7 @@ humans:
   movement_controller: null
   behavior: normal
   speed: 1
+  speed_range: null
+  spawn_window_range: null
   color: null
   personality: null

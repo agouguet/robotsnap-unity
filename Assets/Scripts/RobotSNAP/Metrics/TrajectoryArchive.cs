@@ -80,6 +80,32 @@ namespace RobotSNAP.Metrics
         /// <summary>Folder, under the export root, the per-session archives live in.</summary>
         public const string TrajectoriesFolderName = "trajectories";
 
+        /// <summary>
+        /// What one export root holds, counted rather than read: enough for a reader to decide whether
+        /// deleting it is a decision at all, and to say in one line what it would cost.
+        /// </summary>
+        public readonly struct ArchiveSummary
+        {
+            /// <summary>Number of session lines in <c>sessions.jsonl</c>.</summary>
+            public readonly int Sessions;
+
+            /// <summary>Number of episode lines in <c>catalogue.jsonl</c>.</summary>
+            public readonly int Episodes;
+
+            /// <summary>Bytes of every file under <c>trajectories/</c>.</summary>
+            public readonly long Bytes;
+
+            public ArchiveSummary(int sessions, int episodes, long bytes)
+            {
+                Sessions = sessions;
+                Episodes = episodes;
+                Bytes = bytes;
+            }
+
+            /// <summary>True when there is nothing to delete: no session and no episode.</summary>
+            public bool IsEmpty => Episodes == 0 && Sessions == 0;
+        }
+
         private const int Version = 1;
         private const int RecordHeaderLength = 12;
         private const int AgentFixedLength = 26;
@@ -311,8 +337,12 @@ namespace RobotSNAP.Metrics
         /// Appends this session's line to <c>sessions.jsonl</c>, once per session for the life of this
         /// archive. The line is what tells a reader which sessions exist without walking every archive, and a
         /// session exported twice must not appear twice in it.
+        ///
+        /// <paramref name="name"/> is the name the user gave the session, and it is written only when there is
+        /// one: a session nobody renamed carries no <c>name</c> key at all, because an empty string on disk
+        /// would read as a name somebody chose and then blanked.
         /// </summary>
-        public void EnsureSessionLine(string sessionId, string startedAt)
+        public void EnsureSessionLine(string sessionId, string startedAt, string name = null)
         {
             if (string.IsNullOrEmpty(sessionId) || !_announcedSessions.Add(sessionId))
                 return;
@@ -325,6 +355,9 @@ namespace RobotSNAP.Metrics
                     ["started_at"] = startedAt,
                     ["schema"] = 1,
                 };
+                if (!string.IsNullOrEmpty(name))
+                    line["name"] = name;
+
                 AppendLine(Path.Combine(_root, SessionsFileName), line.ToString(Formatting.None));
                 LastError = null;
             }
@@ -333,6 +366,447 @@ namespace RobotSNAP.Metrics
                 LastError = exception.Message;
                 Debug.LogWarning($"[TrajectoryArchive] writing session '{sessionId}' failed: {exception.Message}");
             }
+        }
+
+        /// <summary>
+        /// Removes one episode from the catalogue. The session's <c>.rbt</c> archive is left exactly as it is:
+        /// its records are addressed by byte range and only ever appended to, so dropping one line never
+        /// invalidates the ones around it, and rewriting the file to reclaim the bytes would be the one thing
+        /// that could.
+        ///
+        /// It never throws and is idempotent: an id that is already absent returns true, because "the archive
+        /// does not hold this episode" is the state the call promises and the state it finds. A false return
+        /// means the catalogue could not be rewritten, so the line may still be there.
+        /// </summary>
+        public static bool DeleteEpisode(string root, string episodeId)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(episodeId))
+                return true;
+
+            try
+            {
+                return RewriteLines(
+                    Path.Combine(root, CatalogueFileName),
+                    line => string.Equals(LineId(line), episodeId, StringComparison.Ordinal) ? null : line,
+                    out _);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Removes every trace of one session: its catalogue lines, its session line and its trajectory
+        /// archive. Like <see cref="DeleteEpisode"/> it never throws and is idempotent - a session the folder
+        /// does not hold returns true - and the lines it leaves behind are rewritten byte for byte, so an
+        /// episode an older version wrote survives untouched.
+        /// </summary>
+        public static bool DeleteSession(string root, string sessionId)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(sessionId))
+                return true;
+
+            try
+            {
+                bool ok = RewriteLines(
+                    Path.Combine(root, CatalogueFileName),
+                    line => string.Equals(CatalogueSession(line), sessionId, StringComparison.Ordinal)
+                        ? null
+                        : line,
+                    out _);
+
+                ok &= RewriteLines(
+                    Path.Combine(root, SessionsFileName),
+                    line => string.Equals(LineId(line), sessionId, StringComparison.Ordinal) ? null : line,
+                    out _);
+
+                ok &= DeleteFileIfPresent(
+                    Path.Combine(root, TrajectoriesFolderName, sessionId + ".rbt"));
+
+                return ok;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Renames one episode by replacing the <c>name</c> key of its catalogue line and nothing else: the
+        /// line is parsed, the one key is set or removed, and the line is written back. An empty or null name
+        /// removes the key rather than writing an empty string, so a never-named and an un-named episode end up
+        /// in the same state and neither carries the computed <c>01_default</c> label the interface shows.
+        ///
+        /// Returns true when the line was found and now carries the name - including when it already did - and
+        /// false when the root or the id is absent, or when the file could not be rewritten. It never throws.
+        /// </summary>
+        public static bool RenameEpisode(string root, string episodeId, string name)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(episodeId))
+                return false;
+
+            bool found = false;
+            try
+            {
+                bool ok = RewriteLines(
+                    Path.Combine(root, CatalogueFileName),
+                    line =>
+                    {
+                        if (!string.Equals(LineId(line), episodeId, StringComparison.Ordinal))
+                            return line;
+
+                        found = true;
+                        JObject document = JObject.Parse(line);
+                        ApplyName(document, name);
+                        return document.ToString(Formatting.None);
+                    },
+                    out _);
+
+                return ok && found;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Renames one session by replacing the <c>name</c> key of its <c>sessions.jsonl</c> line. The rules
+        /// are the ones <see cref="RenameEpisode"/> follows: only the key changes, an empty name removes it,
+        /// and the answer says whether the line was found.
+        /// </summary>
+        public static bool RenameSession(string root, string sessionId, string name)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(sessionId))
+                return false;
+
+            bool found = false;
+            try
+            {
+                bool ok = RewriteLines(
+                    Path.Combine(root, SessionsFileName),
+                    line =>
+                    {
+                        if (!string.Equals(LineId(line), sessionId, StringComparison.Ordinal))
+                            return line;
+
+                        found = true;
+                        JObject document = JObject.Parse(line);
+                        ApplyName(document, name);
+                        return document.ToString(Formatting.None);
+                    },
+                    out _);
+
+                return ok && found;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Drops every <c>sessions.jsonl</c> line whose session the catalogue holds no episode for, and
+        /// returns how many lines went. A session is a session because it ran something: a line an export
+        /// wrote before its first episode landed, or one whose episodes were all deleted since, is a row a
+        /// reader can open and find nothing in.
+        ///
+        /// It never throws, never creates a root, and writes through a temporary file only when there is a
+        /// line to remove - so the common case costs one read and no write at all. A line whose id cannot be
+        /// read is left alone: nothing proves it is empty, and dropping an unreadable line would be deleting
+        /// data that the reader never managed to see.
+        /// </summary>
+        public static int PurgeEmptySessions(string root)
+        {
+            if (string.IsNullOrEmpty(root))
+                return 0;
+
+            try
+            {
+                string sessions = Path.Combine(root, SessionsFileName);
+                if (!File.Exists(sessions))
+                    return 0;
+
+                var live = new HashSet<string>(StringComparer.Ordinal);
+                string catalogue = Path.Combine(root, CatalogueFileName);
+                if (File.Exists(catalogue))
+                {
+                    foreach (string line in File.ReadLines(catalogue))
+                    {
+                        string session = CatalogueSession(line);
+                        if (!string.IsNullOrEmpty(session))
+                            live.Add(session);
+                    }
+                }
+
+                bool ok = RewriteLines(sessions, line =>
+                {
+                    string id = LineId(line);
+                    if (string.IsNullOrEmpty(id))
+                        return line;
+
+                    return live.Contains(id) ? line : null;
+                }, out int removed);
+
+                return ok ? removed : 0;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Counts what a root holds - session lines, episode lines and the bytes of the archives under
+        /// <c>trajectories/</c> - so a caller can show the reader what a delete would cost before asking. It
+        /// never throws and never guesses: a root that is absent or unreadable reads as the empty summary
+        /// rather than as an error, because "there is nothing there" and "I could not look" both lead to the
+        /// same harmless decision - do not offer a delete.
+        /// </summary>
+        public static ArchiveSummary Scan(string root)
+        {
+            if (string.IsNullOrEmpty(root))
+                return new ArchiveSummary(0, 0, 0);
+
+            try
+            {
+                int sessions = CountLines(Path.Combine(root, SessionsFileName));
+                int episodes = CountLines(Path.Combine(root, CatalogueFileName));
+
+                long bytes = 0;
+                string folder = Path.Combine(root, TrajectoriesFolderName);
+                if (Directory.Exists(folder))
+                {
+                    foreach (string file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            bytes += new FileInfo(file).Length;
+                        }
+                        catch (Exception)
+                        {
+                            // A file that vanished between the walk and the read adds nothing, and is not a
+                            // reason to fail the whole count.
+                        }
+                    }
+                }
+
+                return new ArchiveSummary(sessions, episodes, bytes);
+            }
+            catch (Exception)
+            {
+                return new ArchiveSummary(0, 0, 0);
+            }
+        }
+
+        /// <summary>
+        /// Deletes the saved records under <paramref name="root"/>: every <c>.rbt</c> archive under
+        /// <c>trajectories/</c>, the two append-only lines, and any temporary file an interrupted write left
+        /// behind. It is the only place in the project that removes an export, which is what makes "nothing
+        /// else deletes them" something a reader can check rather than a promise to remember. It never throws
+        /// and is idempotent: an absent or already emptied root returns true, because there is nothing left to
+        /// remove either way. A false return means at least one file could not be deleted.
+        /// </summary>
+        public static bool DeleteAll(string root)
+        {
+            if (string.IsNullOrEmpty(root))
+                return true;
+
+            bool deleted = true;
+            try
+            {
+                string folder = Path.Combine(root, TrajectoriesFolderName);
+                DeleteMatching(folder, "*.rbt", ref deleted);
+                DeleteMatching(folder, "*.tmp", ref deleted);
+
+                TryDelete(Path.Combine(root, CatalogueFileName), ref deleted);
+                TryDelete(Path.Combine(root, CatalogueFileName + ".tmp"), ref deleted);
+                TryDelete(Path.Combine(root, SessionsFileName), ref deleted);
+                TryDelete(Path.Combine(root, SessionsFileName + ".tmp"), ref deleted);
+
+                // The single-episode export writes its temporary beside its destination, at the root itself.
+                DeleteMatching(root, "*.tmp", ref deleted);
+            }
+            catch (Exception)
+            {
+                deleted = false;
+            }
+
+            return deleted;
+        }
+
+        private static int CountLines(string path)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                    return 0;
+
+                int lines = 0;
+                foreach (string line in File.ReadLines(path))
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                        lines++;
+                }
+                return lines;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        private static void DeleteMatching(string folder, string pattern, ref bool deleted)
+        {
+            try
+            {
+                if (!Directory.Exists(folder))
+                    return;
+
+                foreach (string file in Directory.EnumerateFiles(folder, pattern, SearchOption.AllDirectories))
+                    TryDelete(file, ref deleted);
+            }
+            catch (Exception)
+            {
+                deleted = false;
+            }
+        }
+
+        private static void TryDelete(string path, ref bool deleted)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception)
+            {
+                deleted = false;
+            }
+        }
+
+        /// <summary>Deletes one file and says whether it is gone, forgiving a file that was never there.</summary>
+        private static bool DeleteFileIfPresent(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Rewrites an append-only line file, dropping or replacing only the lines <paramref name="transform"/>
+        /// answers for. Every line it returns unchanged is written back exactly as it was read - never parsed
+        /// and re-printed - so a line an earlier version wrote, with its own key order and spacing, survives an
+        /// edit it had nothing to do with. Nothing is written when no line changed, and a file that is not there
+        /// is reported as true: there was nothing to rewrite and nothing is left behind either way.
+        ///
+        /// It never throws. A root or a file the process may not touch reads as false, which the caller reports
+        /// instead of letting the exception reach a frame.
+        /// </summary>
+        private static bool RewriteLines(string path, Func<string, string> transform, out int changed)
+        {
+            changed = 0;
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return true;
+
+                string[] lines = File.ReadAllText(path).Split('\n');
+                var rewritten = new List<string>(lines.Length);
+
+                foreach (string line in lines)
+                {
+                    string replacement = transform(line);
+                    if (replacement != line)
+                        changed++;
+                    if (replacement != null)
+                        rewritten.Add(replacement);
+                }
+
+                if (changed == 0)
+                    return true;
+
+                WriteAtomicText(path, string.Join("\n", rewritten));
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Writes through a temporary file and moves it over the destination, so a reader that opens the file
+        /// while it is being rewritten sees the previous complete document or the new one, never a half-written
+        /// one. The temporary is written whole before the destination is touched, so the two-step move leaves
+        /// at worst a moment where the destination is absent - never one where it is half a file.
+        /// </summary>
+        private static void WriteAtomicText(string path, string content)
+        {
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, content, new UTF8Encoding(false));
+
+            if (File.Exists(path))
+                File.Delete(path);
+            File.Move(temporary, path);
+        }
+
+        /// <summary>The <c>id</c> a catalogue or session line names, or null when the line carries none.</summary>
+        private static string LineId(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return null;
+
+            try
+            {
+                return (string)JObject.Parse(line)["id"];
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The session a catalogue line belongs to: its own <c>session</c> field, or, for a line written before
+        /// that field existed, the id of the episode itself. It is the same rule the catalogue reader groups
+        /// by, so a delete and a purge can never disagree with a read about what an episode belongs to.
+        /// </summary>
+        private static string CatalogueSession(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return null;
+
+            try
+            {
+                JObject document = JObject.Parse(line);
+                string session = (string)document["session"];
+                return string.IsNullOrEmpty(session) ? (string)document["id"] : session;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Sets a line's <c>name</c>, or removes the key when the name is empty: an empty string on disk would
+        /// be a name somebody chose and blanked, which is not the same thing as a name nobody gave.
+        /// </summary>
+        private static void ApplyName(JObject document, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                document.Remove("name");
+            else
+                document["name"] = name;
         }
 
         private static void WriteFileHeader(Stream stream)

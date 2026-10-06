@@ -34,6 +34,12 @@ namespace RobotSNAP.Metrics
         private EpisodeMetrics _cachedTrackEpisode;
         private IReadOnlyDictionary<string, List<double[]>> _cachedTracks;
 
+        // The archives of episodes read back from disk, keyed by the export root they came from. A saved
+        // session's episodes carry the folder they were exported to, and a reader that switches between two
+        // saved sessions would otherwise build - and throw away - an archive per request. There are as many
+        // folders as the analysis tab watches, so the dictionary stays tiny by construction.
+        private readonly Dictionary<string, TrajectoryArchive> _archiveByRoot = new(StringComparer.Ordinal);
+
         private static readonly IReadOnlyDictionary<string, List<double[]>> NoTracks =
             new Dictionary<string, List<double[]>>();
 
@@ -50,6 +56,15 @@ namespace RobotSNAP.Metrics
 
         /// <summary>ISO-8601 UTC instant the current session started.</summary>
         public string StartedAt { get; private set; }
+
+        /// <summary>
+        /// Name the user gave the session running now, empty until one is given.
+        ///
+        /// It is a property of the session rather than of a stored document because the running session has no
+        /// document yet: the export is what carries it to disk, as the <c>name</c> key of the session line.
+        /// Starting a new session - a clear - drops it with the rest of the old session's state.
+        /// </summary>
+        public string SessionName { get; set; } = string.Empty;
 
         /// <summary>Episodes of the current session, oldest first. Empty - never null - before the first one.</summary>
         public IReadOnlyList<EpisodeMetrics> Episodes => _episodes;
@@ -80,9 +95,25 @@ namespace RobotSNAP.Metrics
         }
 
         /// <summary>
+        /// Forgets the archive: the sessions it has already announced and the one track it remembers reading.
+        /// A delete of the files has to call this, because an archive that still believed it had announced a
+        /// session would never write that session's line again - the next export would look like a no-op over a
+        /// folder the reader had just emptied. The next export recreates the archive and announces the session
+        /// afresh.
+        /// </summary>
+        public void ForgetArchive()
+        {
+            _archive = null;
+            _cachedTrackEpisode = null;
+            _cachedTracks = null;
+        }
+
+        /// <summary>
         /// The tracks of one episode, keyed by agent id, whichever copy holds them: the inline map while the
         /// episode has not been archived, and otherwise the record the archive holds. An episode with neither
         /// reads as an empty map, never null and never a throw, because the interface asks this every frame.
+        /// That includes an episode whose record has been deleted from disk since it was exported: a record
+        /// that cannot be read is no tracks, which is a state the interface can draw.
         /// </summary>
         public IReadOnlyDictionary<string, List<double[]>> TracksOf(EpisodeMetrics episode)
         {
@@ -100,13 +131,34 @@ namespace RobotSNAP.Metrics
 
             // An episode carrying a reference but no installed archive is one exported by a previous call in
             // this process; the default folder is where that export would have gone without a named root.
-            TrajectoryArchive archive = _archive ??= new TrajectoryArchive(MetricsExporter.DefaultRoot);
+            TrajectoryArchive archive = ResolveArchive(episode);
             if (!archive.TryRead(episode.TrajectoryRef, out Dictionary<string, List<double[]>> tracks))
                 return NoTracks;
 
             _cachedTrackEpisode = episode;
             _cachedTracks = tracks;
             return tracks;
+        }
+
+        /// <summary>
+        /// The archive an episode's tracks are read from. An episode replayed from disk names the folder it
+        /// was exported to - and that folder is not necessarily the one the running session writes to, because
+        /// a fallback export lands elsewhere - so its own root wins over the installed one. An episode with no
+        /// root is a live one, and the installed archive is where its records went.
+        /// </summary>
+        private TrajectoryArchive ResolveArchive(EpisodeMetrics episode)
+        {
+            if (!string.IsNullOrEmpty(episode.ArchiveRoot))
+            {
+                if (!_archiveByRoot.TryGetValue(episode.ArchiveRoot, out TrajectoryArchive saved))
+                {
+                    saved = new TrajectoryArchive(episode.ArchiveRoot);
+                    _archiveByRoot[episode.ArchiveRoot] = saved;
+                }
+                return saved;
+            }
+
+            return _archive ??= new TrajectoryArchive(MetricsExporter.DefaultRoot);
         }
 
         /// <summary>Appends one finished episode. Returns it, so a caller can chain the export.</summary>
@@ -247,6 +299,7 @@ namespace RobotSNAP.Metrics
         private void StartSession()
         {
             StartedAt = UtcNowIso();
+            SessionName = string.Empty;
             SessionId = "s_" + DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture)
                         + "_" + Guid.NewGuid().ToString("N").Substring(0, 6);
         }

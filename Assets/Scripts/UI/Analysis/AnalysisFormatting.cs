@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using RobotSNAP.Metrics;
 
@@ -34,22 +35,59 @@ public static class AnalysisFormatting
         => value.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// What an episode is called on screen: its place in the session, zero-padded, and the scenario it ran -
-    /// <c>01_default</c>. Every episode of a session that repeats one scenario carries the same scenario id,
-    /// so the index is the only thing that tells two runs apart in the list.
+    /// What an episode is called on screen. A name the user gave the run wins over everything: it is the one
+    /// thing on the row that a reader chose, and showing the computed label beside it would make the list and
+    /// the panel that renames it disagree.
     ///
-    /// An episode written before the index existed - or a document built by a test - has no place to show,
-    /// so it falls back to its scenario alone rather than pretending to be number zero.
+    /// Without a name it falls back to the run's place in the session, zero-padded, and the scenario it ran -
+    /// <c>01_default</c>. Every episode of a session that repeats one scenario carries the same scenario id,
+    /// so the index is the only thing that tells two runs apart in the list. An episode written before the
+    /// index existed - or a document built by a test - has no place to show, so it falls back to its scenario
+    /// alone rather than pretending to be number zero.
     /// </summary>
     public static string EpisodeLabel(EpisodeMetrics episode)
     {
         if (episode == null)
             return Unavailable;
 
+        if (!string.IsNullOrWhiteSpace(episode.Name))
+            return episode.Name.Trim();
+
         string scenario = string.IsNullOrEmpty(episode.Scenario) ? "(no scenario)" : episode.Scenario;
         return episode.Index > 0
             ? episode.Index.ToString("D2", CultureInfo.InvariantCulture) + "_" + scenario
             : scenario;
+    }
+
+    /// <summary>
+    /// What a session is called on screen: the name the user gave it when there is one, and the label computed
+    /// from its episodes otherwise. The two are one function so the rail line, the panel heading and the status
+    /// line can never name the same session two different ways.
+    /// </summary>
+    public static string SessionLabel(string name, IReadOnlyList<EpisodeMetrics> episodes)
+        => string.IsNullOrWhiteSpace(name) ? ComputedSessionLabel(episodes) : name.Trim();
+
+    /// <summary>
+    /// The label a session carries before anyone names it: the one scenario it ran, or how many it ran. A
+    /// session that has not filed an episode yet says so rather than being called "0 scenarios".
+    /// </summary>
+    public static string ComputedSessionLabel(IReadOnlyList<EpisodeMetrics> episodes)
+    {
+        var scenarios = new List<string>();
+        if (episodes != null)
+        {
+            foreach (EpisodeMetrics episode in episodes)
+            {
+                string scenario = episode?.Scenario;
+                if (!string.IsNullOrEmpty(scenario) && !scenarios.Contains(scenario))
+                    scenarios.Add(scenario);
+            }
+        }
+
+        if (scenarios.Count == 1)
+            return scenarios[0];
+
+        return scenarios.Count == 0 ? "No episode yet" : scenarios.Count + " scenarios";
     }
 
     /// <summary>A ratio in percent, for a success rate.</summary>

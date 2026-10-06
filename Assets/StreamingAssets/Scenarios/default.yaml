@@ -1,225 +1,94 @@
-scenario_info: 
-  name: Default
+scenario_info:
+  name: default
   type: Custom
-  description: Default minimal scenario
-  version: 1.0
+  description: 'Goal navigation for a training loop'
+  version: '1.0'
   author: RobotSNAP
-  created: "2026-09-11 15:11"
-  tags: 
-  - Basic
-  - Corner
-  - Corridor
-  - Indoor
+  created: '2026-10-05 11:38'
+  tags: []
   map: basic/crowd
-  location: null
+  location: ''
   dataset: null
-  preview: ""
-  robot_type: Jackal
-  duration: 0
-points: 
-  spawn_zone: 
-    x: null
-    y: null
-    z: null
-    yaw: null
-    center: 
-      x: 0
-      y: 0
-      z: -9
-    size: 
-      x: 1
-      y: 1
-      z: 1
-  end_zone: 
-    x: null
-    y: null
-    z: null
-    yaw: null
-    center: 
-      x: 9
-      y: 0
-      z: 0
-    size: 
-      x: 1
-      y: 1
-      z: 1
-  pedestrians_start: 
-    x: -5
-    y: 0
-    z: -2.18
+  preview: ''
+  robot_type: jackal
+  duration: 0.0
+points:
+  robot_1_start:
+    x: -7.0
+    y: 0.0
+    z: 0.0
+    yaw: 0.0
+    center: null
+    size: null
+  robot_1_goal:
+    x: 7.0
+    y: 0.0
+    z: 0.0
     yaw: null
     center: null
     size: null
-  pedestrians_goal_1: 
-    x: 5.21
-    y: 0
-    z: -2.18
-    yaw: null
-    center: null
-    size: null
-  start_robot: 
-    x: null
-    y: null
-    z: null
-    yaw: 180
-    center: 
-      x: 0
-      y: 0
-      z: 5
-    size: 
-      x: 12
-      y: 0
-      z: 4
-  end_robot: 
-    x: 0
-    y: 0
-    z: -5
-    yaw: null
-    center: null
-    size: null
-  human_route_2_start: 
-    x: -5
-    y: 0
-    z: 2.67
-    yaw: null
-    center: null
-    size: null
-  human_route_2_goal_1: 
-    x: 5.21
-    y: 0
-    z: 2.59
-    yaw: null
-    center: null
-    size: null
-  human_route_3_start: 
-    x: -5
-    y: 0
-    z: 0
-    yaw: null
-    center: null
-    size: null
-  human_route_3_goal_1: 
-    x: 5.21
-    y: 0
-    z: -0.08
-    yaw: null
-    center: null
-    size: null
-  robot_2_start: 
-    x: -5
-    y: 0
-    z: 5
-    yaw: 0
-    center: null
-    size: null
-  robot_2_goal: 
-    x: 5
-    y: 0
-    z: 5
-    yaw: null
-    center: null
-    size: null
-robots: 
-- id: robot_1
-  type: jackal
-  start: start_robot
-  goal: end_robot
-  waypoints: null
-  behavior: normal
-  speed: 2
-- id: robot_2
-  type: freight
-  start: robot_2_start
-  goal: robot_2_goal
-  waypoints: null
-  behavior: normal
-  speed: 1
+robots:
+  - id: robot_1
+    type: jackal
+    start: robot_1_start
+    goal: robot_1_goal
+    waypoints: null
+    behavior: normal
+    speed: 1.5
 robot: null
-humans: 
-- id: pedestrians
-  count: 1
-  spawn_window: 0
-  spawn: 
-    type: point
-    ref: pedestrians_start
-    position: null
-    zone: null
-    formation: pair
-    formation_parameter: 0
-    spacing: 0.8
-    relative_to: null
-  goal: 
-    type: point
-    ref: pedestrians_goal_1
-    position: null
-    zone: null
-    target: null
-    radius: 0
-  goals: null
-  end_behavior: stay
-  group: null
-  movement_controller: 
-    type: SFM
-    sfm_params: null
-  behavior: normal
-  speed: 1
-  color: null
-  personality: null
-- id: human_route_2
-  count: 1
-  spawn_window: 0
-  spawn: 
-    type: point
-    ref: human_route_2_start
-    position: null
-    zone: null
-    formation: pair
-    formation_parameter: 0
-    spacing: 0.8
-    relative_to: null
-  goal: 
-    type: point
-    ref: human_route_2_goal_1
-    position: null
-    zone: null
-    target: null
-    radius: 5
-  goals: null
-  end_behavior: stay
-  group: null
-  movement_controller: 
-    type: SFM
-    sfm_params: null
-  behavior: normal
-  speed: 1
-  color: null
-  personality: null
-- id: human_route_3
-  count: 1
-  spawn_window: 0
-  spawn: 
-    type: point
-    ref: human_route_3_start
-    position: null
-    zone: null
-    formation: pair
-    formation_parameter: 0
-    spacing: 0.8
-    relative_to: null
-  goal: 
-    type: point
-    ref: human_route_3_goal_1
-    position: null
-    zone: null
-    target: null
-    radius: 5
-  goals: null
-  end_behavior: stay
-  group: null
-  movement_controller: 
-    type: SFM
-    sfm_params: null
-  behavior: normal
-  speed: 1
-  color: null
-  personality: null
+humans:
+  - id: pedestrians
+    count: 4
+    spawn_window: 0.0
+    spawn:
+      type: random
+      ref: null
+      position: null
+      zone:
+        x: null
+        y: null
+        z: null
+        yaw: null
+        center:
+          x: 0.0
+          y: 0.0
+          z: -5.0
+        size:
+          x: 3.0
+          y: 0.0
+          z: 3.0
+      formation: scatter
+      formation_parameter: 0.0
+      spacing: 1.5
+      relative_to: null
+    goal:
+      type: random
+      ref: null
+      position: null
+      zone:
+        x: null
+        y: null
+        z: null
+        yaw: null
+        center:
+          x: 0.0
+          y: 0.0
+          z: 5.0
+        size:
+          x: 3.0
+          y: 0.0
+          z: 3.0
+      formation: scatter
+      formation_parameter: 0.0
+      spacing: 1.5
+      relative_to: null
+    goals: null
+    end_behavior: loop
+    group: null
+    movement_controller:
+      type: SFM
+      sfm_params: null
+    behavior: normal
+    speed: 1.0
+    color: null
+    personality: null

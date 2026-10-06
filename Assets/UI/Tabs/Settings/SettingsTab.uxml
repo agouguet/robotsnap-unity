@@ -113,6 +113,20 @@
                     <ui:Label name="RosPreviewLabel" text="" class="settings-topic-preview"/>
                     <ui:Label name="RosStatusLabel" text="" class="settings-profile-status"/>
                 </ui:VisualElement>
+                <ui:VisualElement name="DataSection" class="settings-section">
+                    <ui:Label text="Data" class="settings-section-title"/>
+                    <ui:Label text="What the analysis tab has saved on disk, in the folders it reads." class="settings-section-hint"/>
+                    <ui:VisualElement class="settings-row">
+                        <ui:VisualElement class="settings-row-label">
+                            <ui:Label text="Saved analysis data" class="settings-row-label"/>
+                            <ui:Label name="DataSummaryLabel" text="" class="settings-row-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="settings-row-control">
+                            <ui:Button name="ClearCacheButton" text="Clear cache" class="settings-button settings-button-danger" tooltip="Remove every saved session, catalogue line and trajectory the analysis tab reads."/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:Label name="DataStatusLabel" text="" class="settings-profile-status"/>
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:ScrollView>
     </ui:VisualElement>
