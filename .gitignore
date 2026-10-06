@@ -119,6 +119,10 @@ InitTestScene*.unity*
 # Solution file the editor generates. The template above ignores *.sln, which does not cover it.
 *.slnx
 
+# Installers produced by packaging/make_installer.sh. They are release
+# artefacts, hundreds of megabytes each, never build inputs.
+/[Dd]ist/
+
 # Binaries that ended up at the root of the project - a player build and the window-decoration
 # libraries of the desktop it was built on. Native plugins belong under Assets/Plugins.
 /UnityPlayer.so
