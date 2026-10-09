@@ -80,9 +80,13 @@ namespace RobotSNAP.Agents
     {
         public const string SfmValue = "SFM";
         public const string ExternalValue = "External";
+        public const string ManualValue = "Manual";
+        public const string ReplayValue = "Replay";
 
         public const string SfmDisplayName = "SFM (social forces)";
         public const string ExternalDisplayName = "External (Python API)";
+        public const string ManualDisplayName = "Manual (keyboard)";
+        public const string ReplayDisplayName = "Replay (recorded)";
 
         // Labels the editor wrote into scenarios while the ONNX and hybrid controllers still existed.
         private const string LegacyOnnxDisplayName = "ONNX (learned)";
@@ -104,6 +108,16 @@ namespace RobotSNAP.Agents
             if (string.Equals(text, ExternalDisplayName, StringComparison.OrdinalIgnoreCase))
             {
                 controller = MovementControllerType.External;
+                return true;
+            }
+            if (string.Equals(text, ManualDisplayName, StringComparison.OrdinalIgnoreCase))
+            {
+                controller = MovementControllerType.Manual;
+                return true;
+            }
+            if (string.Equals(text, ReplayDisplayName, StringComparison.OrdinalIgnoreCase))
+            {
+                controller = MovementControllerType.Replay;
                 return true;
             }
             if (string.Equals(text, LegacyOnnxDisplayName, StringComparison.OrdinalIgnoreCase) ||
@@ -130,6 +144,17 @@ namespace RobotSNAP.Agents
                 case "remote":
                     controller = MovementControllerType.External;
                     return true;
+                case "manual":
+                case "keyboard":
+                case "by hand":
+                case "operator":
+                    controller = MovementControllerType.Manual;
+                    return true;
+                case "replay":
+                case "recorded":
+                case "playback":
+                    controller = MovementControllerType.Replay;
+                    return true;
 
                 // Historic values of the removed ONNX and hybrid controllers. Scenarios already saved on
                 // disk may still carry them, so they keep loading and fall back to the SFM controller.
@@ -153,7 +178,9 @@ namespace RobotSNAP.Agents
         {
             switch (controller)
             {
+                case MovementControllerType.Manual: return ManualValue;
                 case MovementControllerType.External: return ExternalValue;
+                case MovementControllerType.Replay: return ReplayValue;
                 default: return SfmValue;
             }
         }
@@ -163,7 +190,9 @@ namespace RobotSNAP.Agents
         {
             switch (controller)
             {
+                case MovementControllerType.Manual: return ManualDisplayName;
                 case MovementControllerType.External: return ExternalDisplayName;
+                case MovementControllerType.Replay: return ReplayDisplayName;
                 default: return SfmDisplayName;
             }
         }

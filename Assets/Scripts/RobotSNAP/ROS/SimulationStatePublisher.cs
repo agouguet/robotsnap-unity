@@ -921,7 +921,10 @@ namespace RobotSNAP.ROS
                     speed = human.CurrentSpeed,
                     goal = human.HasDestination ? PositionJson(human.CurrentGoal) : null,
                     group = human.Group != null ? (object)human.Group.Id : null,
-                    controller = human.IsExternallyControlled ? "external" : "sfm",
+                    controller = human.IsManuallyControlled ? "manual"
+                        : human.IsReplayControlled ? "replay"
+                        : human.IsExternallyControlled ? "external"
+                        : "sfm",
                     end_behavior = human.EndBehavior.ToString().ToLowerInvariant()
                 });
             }

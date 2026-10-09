@@ -291,7 +291,12 @@ namespace RobotSNAP
             if (controlMode == ControlMode.ROS || controlMode == ControlMode.Hybrid)
             {
                 _rosLinear = Mathf.Clamp((float)msg.linear.x, -maxLinearSpeed, maxLinearSpeed);
-                _rosAngular = Mathf.Clamp(-(float)msg.angular.z, -maxAngularSpeed, maxAngularSpeed);
+                // Le signe est repris tel quel : une consigne ROS positive tourne vers la gauche
+                // (sens anti-horaire vu de dessus), et c'est la convention que partagent les conduites
+                // du projet - le controleur de roues comme la base cinematique. La negation qui vivait
+                // ici inversait donc le sens de rotation du robot par rapport a ce que le planificateur
+                // demandait, ce qui faisait osciller le lacet et reculer le robot vers son but.
+                _rosAngular = Mathf.Clamp((float)msg.angular.z, -maxAngularSpeed, maxAngularSpeed);
             }
         }
 

@@ -1,5 +1,7 @@
 using System;
+using RobotSNAP;
 using RobotSNAP.Agents;
+using RobotSNAP.CameraControl;
 using RobotSNAP.Core;
 using RobotSNAP.Core.Scenario;
 using RobotSNAP.ROS;
@@ -8,11 +10,13 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// The application bar along the bottom of the window: what the simulation is doing and for how
-/// long, how many agents are around, whether the ROS bridge is up, and the power button that closes
-/// the application.
+/// long, how many agents are around, whether the ROS bridge is up, the ROS chip that hands the robot
+/// the view is on to ROS 2, and the power button that closes the application.
 ///
-/// The bar reads the simulation, it never drives it: the state comes from the event bus, the agent
-/// figures are counted from the scene, and the clock only advances while the simulation runs.
+/// The bar reads the simulation first: the state comes from the event bus, the agent figures are
+/// counted from the scene, and the clock only advances while the simulation runs. Its two buttons are
+/// the exception - the ROS chip changes the control mode of one robot, and the power button closes
+/// the application - and both ask for that through an effect a test can stand in for.
 /// </summary>
 public sealed class AppStatusBar : IDisposable
 {
@@ -20,13 +24,25 @@ public sealed class AppStatusBar : IDisposable
     private const string AgentsIconPath = "Icons/agents";
     private const string PowerIconPath = "Icons/power";
 
+    /// <summary>The name <see cref="RobotInputController.GetModeString"/> gives the ROS control mode.</summary>
+    private const string RosModeName = "ROS";
+
     private readonly Label _messageLabel;
     private readonly Label _timeLabel;
     private readonly Label _agentsLabel;
     private readonly VisualElement _rosDot;
+    private readonly Button _rosChip;
     private readonly Button _quitButton;
     private readonly Action _quitRequested;
+    private readonly Action _rosControlToggled;
+    private readonly Func<bool> _isRosControlled;
     private readonly VisualElement _root;
+
+    /// <summary>
+    /// The simulation view, which owns the robot selection. Looked up on the first refresh and then
+    /// kept, the way the ROS environment is, so the slow path does not search the scene every frame.
+    /// </summary>
+    private CameraController _camera;
 
     /// <summary>The question standing in front of the close, while one is being asked.</summary>
     private ConfirmationDialog _quitDialog;
@@ -48,12 +64,36 @@ public sealed class AppStatusBar : IDisposable
     /// <summary>
     /// Builds the bar with the effect a click on the power button has. The effect is a parameter so an
     /// edit-mode test can observe the click path without stopping Play mode or closing the editor;
-    /// the application hands it <see cref="QuitApplication"/>, which is also the default.
+    /// the application hands it <see cref="QuitApplication"/>, which is also the default. The ROS chip
+    /// keeps its own effect and reading.
     /// </summary>
     public AppStatusBar(VisualElement root, Action quitRequested)
+        : this(root, quitRequested, null)
+    {
+    }
+
+    /// <summary>
+    /// The above, with the effect a click on the ROS chip has. Both effects are parameters for the same
+    /// reason: an edit-mode tree has no panel, so a test raises the click through <see cref="RequestRosControl"/>
+    /// and reads what the bar asked of it.
+    /// </summary>
+    public AppStatusBar(VisualElement root, Action quitRequested, Action rosControlToggled)
+        : this(root, quitRequested, rosControlToggled, null)
+    {
+    }
+
+    /// <summary>
+    /// The above, with the reading that decides whether the ROS chip shows as armed. It is a parameter so a
+    /// test can say "the targeted robot obeys ROS" without a scene; the application leaves it null and the
+    /// bar then reads the control mode off the robot the view is on, so a switch made from the bridge lights
+    /// the chip on its own.
+    /// </summary>
+    public AppStatusBar(VisualElement root, Action quitRequested, Action rosControlToggled, Func<bool> isRosControlled)
     {
         _root = root;
         _quitRequested = quitRequested ?? QuitApplication;
+        _rosControlToggled = rosControlToggled ?? ToggleSelectedRobotRosControl;
+        _isRosControlled = isRosControlled ?? SelectedRobotUnderRosControl;
 
         if (root == null)
         {
@@ -76,10 +116,11 @@ public sealed class AppStatusBar : IDisposable
         _agentsLabel = Query<Label>(bar, "StatusAgentsLabel");
         VisualElement agentsIcon = Query<VisualElement>(bar, "StatusAgentsIcon");
         _rosDot = Query<VisualElement>(bar, "StatusRosDot");
+        _rosChip = Query<Button>(bar, "StatusRos");
         _quitButton = Query<Button>(bar, "QuitAppButton");
 
         if (_messageLabel == null || _timeLabel == null || _agentsLabel == null ||
-            _quitButton == null)
+            _rosChip == null || _quitButton == null)
         {
             Debug.LogWarning("[AppStatusBar] The application bar is incomplete; it stays inert.");
             return;
@@ -88,6 +129,7 @@ public sealed class AppStatusBar : IDisposable
         ApplyIcon(agentsIcon, AgentsIconPath);
         ApplyIcon(_quitButton, PowerIconPath);
 
+        _rosChip.clicked += RequestRosControl;
         _quitButton.clicked += OnQuitClicked;
 
         _scenarioManager = UnityEngine.Object.FindAnyObjectByType<ScenarioManager>();
@@ -118,6 +160,9 @@ public sealed class AppStatusBar : IDisposable
 
         if (_quitButton != null)
             _quitButton.clicked -= OnQuitClicked;
+
+        if (_rosChip != null)
+            _rosChip.clicked -= RequestRosControl;
 
         _quitDialog?.RemoveFromHierarchy();
         _quitDialog = null;
@@ -196,6 +241,17 @@ public sealed class AppStatusBar : IDisposable
     }
 
     /// <summary>
+    /// What a click on the ROS chip does: it hands one robot to ROS 2, or takes it back to the scenario when
+    /// ROS is already driving it. Its own method for the same reason <see cref="RequestQuit"/> has one - the
+    /// wiring of a button can be exercised without a panel to raise a click through.
+    /// </summary>
+    public void RequestRosControl()
+    {
+        _rosControlToggled?.Invoke();
+        ApplyRosState();
+    }
+
+    /// <summary>
     /// What a click on the power button does: it asks first.
     ///
     /// Closing ends the session, and the episodes this session recorded live only in memory - the Analysis tab
@@ -266,9 +322,75 @@ public sealed class AppStatusBar : IDisposable
 
     private void ApplyRosState()
     {
-        if (_rosDot == null) return;
+        // Two readings, two marks: the dot keeps saying whether the bridge is reachable, and the chip
+        // lights up while the robot it targets obeys ROS. Both are re-read on the bar's own refresh, so a
+        // mode switched from Python or ROS lights the chip here without anybody clicking it.
+        _rosDot?.EnableInClassList("is-online", _envRos != null && _envRos.IsInitialized);
+        _rosChip?.EnableInClassList("is-ros-controlled", _isRosControlled != null && _isRosControlled());
+    }
 
-        _rosDot.EnableInClassList("is-online", _envRos != null && _envRos.IsInitialized);
+    /// <summary>
+    /// The robot the ROS chip acts on: the one the simulation view is following, which is the same selection
+    /// the keyboard obeys and the agent panel shows. Nothing selected leaves the chip the roster's primary,
+    /// <c>robot_1</c>, or the first robot of a scenario that named its robots differently - so a session nobody
+    /// has picked still has a target.
+    /// </summary>
+    private Robot TargetRobot()
+    {
+        _camera ??= UnityEngine.Object.FindAnyObjectByType<CameraController>();
+        Transform followed = _camera != null ? _camera.GetCurrentFollowTarget() : null;
+        if (followed != null)
+        {
+            Robot selected = followed.GetComponentInParent<Robot>();
+            if (selected != null)
+                return selected;
+        }
+
+        RobotRoster roster = RobotRoster.Current;
+        if (roster != null && roster.Primary != null)
+            return roster.Primary;
+
+        // A scene with neither a selection nor a roster is the single-robot scene these commands always
+        // resolved before the roster existed.
+        return UnityEngine.Object.FindAnyObjectByType<Robot>();
+    }
+
+    /// <summary>
+    /// Input controller of the targeted robot: the one that lives on it, falling back to the single controller
+    /// of a scene that keeps it elsewhere - the same pair the bridge command router resolves.
+    /// </summary>
+    private RobotInputController TargetInputController()
+    {
+        Robot robot = TargetRobot();
+        RobotInputController controller = robot != null ? robot.GetComponentInChildren<RobotInputController>() : null;
+        return controller != null ? controller : UnityEngine.Object.FindAnyObjectByType<RobotInputController>();
+    }
+
+    /// <summary>
+    /// Hands the targeted robot to ROS 2, or back to the scenario when ROS is already driving it. The controller
+    /// clears its target speeds and stops the robot on the change, so the switch is a takeover rather than an
+    /// accelerator, and a second press gives the robot back the route the scenario had given it.
+    /// </summary>
+    private void ToggleSelectedRobotRosControl()
+    {
+        RobotInputController controller = TargetInputController();
+        if (controller == null)
+        {
+            Debug.LogWarning("[AppStatusBar] No robot input controller to hand to ROS; the chip stays inert.");
+            return;
+        }
+
+        bool underRos = controller.GetModeString() == RosModeName;
+        controller.SetControlMode(underRos
+            ? RobotInputController.ControlMode.Scenario
+            : RobotInputController.ControlMode.ROS);
+    }
+
+    /// <summary>Whether the targeted robot is being driven by ROS right now.</summary>
+    private bool SelectedRobotUnderRosControl()
+    {
+        RobotInputController controller = TargetInputController();
+        return controller != null && controller.GetModeString() == RosModeName;
     }
 
     private void CountAgents()

@@ -24,6 +24,12 @@ using UnityEditor;
 /// </summary>
 public class AnalysisTabController : MonoBehaviour
 {
+    /// <summary>What the replay button says while no episode is being re-run.</summary>
+    public const string ReplayEpisodeStartText = "Replay episode";
+
+    /// <summary>And what it says while the selected episode is being re-run in the scene.</summary>
+    public const string ReplayEpisodeStopText = "Stop replay";
+
     [SerializeField] private UIDocument uiDocument;
 
     private bool _initialized;
@@ -37,12 +43,14 @@ public class AnalysisTabController : MonoBehaviour
     private AnalysisEpisodeReplay _replay;
     private AnalysisTimeline _timeline;
     private AnalysisEditableTitle _episodeTitle;
+    private bool _episodeReplaying;
     private VisualElement _mapPanel;
     private VisualElement _detailColumn;
     private VisualElement _timelineHost;
     private VisualElement _detailHost;
     private VisualElement _summaryHost;
     private Button _openFolderButton;
+    private Button _replayEpisodeButton;
     private Label _status;
     private string _statusSource;
 
@@ -104,6 +112,7 @@ public class AnalysisTabController : MonoBehaviour
         var missing = new List<string>();
         _page = Require<VisualElement>(root, "AnalysisPage", missing);
         _openFolderButton = Require<Button>(root, "AnalysisOpenFolderButton", missing);
+        _replayEpisodeButton = Require<Button>(root, "AnalysisReplayEpisodeButton", missing);
         _status = Require<Label>(root, "AnalysisExportStatus", missing);
         VisualElement railHost = Require<VisualElement>(root, "AnalysisSessionRailHost", missing);
         VisualElement listHost = Require<VisualElement>(root, "AnalysisEpisodeListHost", missing);
@@ -163,6 +172,7 @@ public class AnalysisTabController : MonoBehaviour
         _timeline.TogglePlayRequested += OnTogglePlayRequested;
         RefreshView();
 
+        _replayEpisodeButton.clicked += OnReplayEpisodeClicked;
         _openFolderButton.clicked += OnOpenFolderClicked;
         _initialized = true;
     }
@@ -270,6 +280,8 @@ public class AnalysisTabController : MonoBehaviour
         // No cursor outside the one-episode view: a frise would be replaying a run the panels beside it are
         // not describing.
         _replay.Show(hasEpisode ? selected : null);
+        // And no scene replay of a run the tab has moved on from.
+        SyncEpisodeReplayWithSelection();
         _summary.Show(_session.Episodes, AnalysisSessionSummary.WholeSession);
     }
 
@@ -352,6 +364,63 @@ public class AnalysisTabController : MonoBehaviour
     }
 
     private void OnTogglePlayRequested() => _replay?.TogglePlay();
+
+    /// <summary>
+    /// Starts or stops a replay of the episode the tab is showing. Starting it re-applies that episode's
+    /// scenario and hands the crowd its recorded tracks, so the people walk it again and a robot solution can
+    /// be tried against the same situation; stopping it puts the crowd back on its scenario controller. The
+    /// button carries the state, so a reader always has the one word for what a press would do.
+    /// </summary>
+    private void OnReplayEpisodeClicked()
+    {
+        if (_episodeReplaying)
+        {
+            StopEpisodeReplay();
+            return;
+        }
+
+        EpisodeMetrics episode = _replay?.Episode;
+        if (episode == null)
+            return; // Nothing to re-run, so the button does nothing rather than load a scenario for nobody.
+
+        EpisodeReplayDirector.Start(episode);
+        _episodeReplaying = true;
+
+        if (_replayEpisodeButton != null)
+            _replayEpisodeButton.text = ReplayEpisodeStopText;
+    }
+
+    /// <summary>
+    /// Stops the replay if the selection moved on. A reader who picks another run, or clears the selection,
+    /// means the panels beside them to describe that run - not the one whose crowd is still walking the
+    /// scene - so the replay follows the selection out.
+    /// </summary>
+    private void SyncEpisodeReplayWithSelection()
+    {
+        if (!_episodeReplaying)
+            return;
+
+        // The runs are compared by identity rather than by reference: the list hands back the same objects for
+        // the session in progress, but a reload of a saved session read from disk rebuilds them with equal ids.
+        EpisodeMetrics selectedEpisode = _replay?.Episode;
+        EpisodeMetrics replayedEpisode = EpisodeReplayDirector.Episode;
+        if (selectedEpisode == null || replayedEpisode == null ||
+            !string.Equals(selectedEpisode.Id, replayedEpisode.Id, StringComparison.Ordinal))
+            StopEpisodeReplay();
+    }
+
+    /// <summary>Ends the replay and puts the button back to its start word.</summary>
+    private void StopEpisodeReplay()
+    {
+        if (!_episodeReplaying)
+            return;
+
+        EpisodeReplayDirector.Stop();
+        _episodeReplaying = false;
+
+        if (_replayEpisodeButton != null)
+            _replayEpisodeButton.text = ReplayEpisodeStartText;
+    }
 
     // -- the export folder ----------------------------------------------------
 
@@ -828,6 +897,9 @@ public class AnalysisTabController : MonoBehaviour
 
     private void Detach()
     {
+        StopEpisodeReplay();
+        if (_replayEpisodeButton != null)
+            _replayEpisodeButton.clicked -= OnReplayEpisodeClicked;
         if (_openFolderButton != null)
             _openFolderButton.clicked -= OnOpenFolderClicked;
         if (_rail != null)
@@ -877,6 +949,7 @@ public class AnalysisTabController : MonoBehaviour
         _detailHost = null;
         _summaryHost = null;
         _openFolderButton = null;
+        _replayEpisodeButton = null;
         _status = null;
         _session = null;
         _page = null;

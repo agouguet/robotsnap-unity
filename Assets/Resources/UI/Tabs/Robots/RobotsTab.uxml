@@ -1,0 +1,106 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:VisualElement name="RobotsPage" class="robots-page">
+        <ui:VisualElement class="robots-header">
+            <ui:Label text="Robots" class="robots-page-title"/>
+            <ui:Label text="Configure the robot types a scenario can use: their speeds, their lidar and what they detect. A tuning is kept for the type and applies to every scenario that places it." class="robots-page-subtitle"/>
+        </ui:VisualElement>
+        <ui:VisualElement class="robots-content">
+            <ui:VisualElement class="robots-list-column">
+                <ui:Label text="Robot types" class="robots-column-title"/>
+                <ui:ScrollView name="RobotListScroll" class="robots-list-scroll" mode="Vertical" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="RobotListHost" class="robots-list-host"/>
+                </ui:ScrollView>
+                <ui:Label name="RobotListEmpty" text="No robot type is available." class="robots-list-empty"/>
+            </ui:VisualElement>
+            <ui:VisualElement class="robots-preview-column">
+                <ui:Label text="Preview" class="robots-column-title"/>
+                <ui:VisualElement name="RobotPreviewContainer" class="robots-preview-container">
+                    <ui:Label name="RobotPreviewName" text="" class="robots-preview-name"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:ScrollView name="RobotParametersScroll" class="robots-parameters-column" mode="Vertical" horizontal-scroller-visibility="Hidden">
+                <ui:Label text="Parameters" class="robots-column-title"/>
+                <ui:VisualElement class="robots-fields">
+                    <ui:VisualElement class="robots-row">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Max linear speed" class="robots-field-label"/>
+                            <ui:Label text="Highest linear speed the base may be commanded, in m/s." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotMaxLinearSpeed" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Max angular speed" class="robots-field-label"/>
+                            <ui:Label text="Highest angular speed the base may be commanded, in rad/s." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotMaxAngularSpeed" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Lidar span" class="robots-field-label"/>
+                            <ui:Label text="Field of view of the lidar, in degrees. 360 is a full circle." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotLidarSpan" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Lidar range" class="robots-field-label"/>
+                            <ui:Label text="Furthest the lidar sees, in metres." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotLidarRange" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Lidar rays" class="robots-field-label"/>
+                            <ui:Label text="Number of rays of one scan. It is what the scan costs." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:IntegerField name="RobotLidarRays" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Lidar height" class="robots-field-label"/>
+                            <ui:Label text="Height of the laser plane above the ground, in metres." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotLidarHeight" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Lidar frequency" class="robots-field-label"/>
+                            <ui:Label text="Publishing rate of the scan, in Hz." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotLidarFrequency" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="robots-row robots-row--divided">
+                        <ui:VisualElement class="robots-row-label">
+                            <ui:Label text="Agent detection radius" class="robots-field-label"/>
+                            <ui:Label text="Radius, in metres, within which the robot notices the other agents." class="robots-field-detail"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="robots-row-control">
+                            <ui:FloatField name="RobotDetectionRadius" class="robots-number-field"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement class="robots-actions-row">
+                    <ui:Button name="RobotResetButton" text="Reset to defaults" class="robots-button" tooltip="Restore the built-in figures of this robot type and remove the saved tuning."/>
+                    <ui:Button name="RobotSaveButton" text="Save" class="robots-button robots-button-accent" tooltip="Save these figures for this robot type; every scenario that places it will drive with them."/>
+                </ui:VisualElement>
+                <ui:Label name="RobotTuningStatus" text="" class="robots-status"/>
+                <ui:Label text="Saved tunings live on disk and are applied to this robot type every time a scenario that places it is launched." class="robots-hint"/>
+            </ui:ScrollView>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

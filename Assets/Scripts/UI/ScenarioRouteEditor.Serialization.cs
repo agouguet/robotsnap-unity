@@ -13,10 +13,17 @@ using UnityEngine.UIElements;
 public sealed partial class ScenarioRouteEditor
 {
 
-    public void WriteToScenario(ScenarioData scenario)
+    /// <summary>
+    /// Writes every route of the wizard into <paramref name="scenario"/> and returns the crowd routes the
+    /// writer had to leave out, named with the reason. A route that carries no agent has nothing to write -
+    /// its points would be references to nothing - but the author drew it, so the caller is told rather than
+    /// left to find it gone from the file.
+    /// </summary>
+    public IReadOnlyList<string> WriteToScenario(ScenarioData scenario)
     {
         scenario.Points ??= new Dictionary<string, RefPoint>();
         HashSet<string> previousRouteReferences = CollectRouteReferences(scenario);
+        var skippedRoutes = new List<string>();
 
         // Every robot of the scenario is written as one entry of the list, in the order the editor lists them.
         // The robot a client reaches without naming anybody is robot_1, which is the id the first route carries,
@@ -70,8 +77,15 @@ public sealed partial class ScenarioRouteEditor
 
         var humanConfigs = new List<HumanScenarioConfig>();
         int humanIndex = 1;
-        foreach (RouteDraft draft in _routes.Where(route => !route.IsRobot && CarriesAgents(route)))
+        foreach (RouteDraft draft in _routes.Where(route => !route.IsRobot))
         {
+            // The author stays master of the count: a route left at zero is reported, never given one quietly.
+            if (!CarriesAgents(draft))
+            {
+                skippedRoutes.Add($"{draft.Id} carries no agents (count {draft.Count}, no count range)");
+                continue;
+            }
+
             HumanScenarioConfig config = draft.Source ?? new HumanScenarioConfig();
             config.Id = string.IsNullOrWhiteSpace(config.Id) ? $"human_route_{humanIndex}" : config.Id;
             config.Count = draft.Count;
@@ -136,6 +150,8 @@ public sealed partial class ScenarioRouteEditor
         HashSet<string> activeRouteReferences = CollectRouteReferences(scenario);
         foreach (string staleReference in previousRouteReferences.Except(activeRouteReferences))
             scenario.Points.Remove(staleReference);
+
+        return skippedRoutes;
     }
 
     private static Rect? GoalZone(GoalConfig goal) => IsRandomGoal(goal) ? ReadZone(goal?.Zone) : null;

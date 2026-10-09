@@ -135,7 +135,12 @@ namespace RobotSNAP.Agents
             // tel quel. Le robot reste donc sur le sol, sans dérive verticale ni flottement.
             Vector3 forward = Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward;
             _pose += forward * (linearSpeed * dt);
-            _yaw += angularSpeed * Mathf.Rad2Deg * dt;
+            // La consigne angulaire est en convention ROS : positive vers la gauche. Unity tourne dans
+            // l'autre sens autour de son axe vertical - un lacet qui augmente est une rotation horaire
+            // vue de dessus - donc avancer le lacet Unity demande de soustraire la consigne. Ajouter
+            // faisait tourner ce robot a l'oppose de ses roues, et de l'inverse de ce que le planificateur
+            // avait demande.
+            _yaw -= angularSpeed * Mathf.Rad2Deg * dt;
 
             _baseLink.TeleportRoot(_pose, Quaternion.Euler(0f, _yaw, 0f));
 

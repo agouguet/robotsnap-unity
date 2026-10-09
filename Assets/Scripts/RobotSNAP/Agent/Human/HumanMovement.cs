@@ -59,6 +59,9 @@ namespace RobotSNAP.Agents
         private ExternalControlController _externalController;
         private bool _warnedAboutExternalCommand;
 
+        // Set when the human walks the recorded track of an episode instead of deciding its own movement.
+        private RecordedTrajectoryController _recordedController;
+
         /// <summary>Destination move that makes the current path obsolete, in metres.</summary>
         private const float GoalChangeTolerance = 0.5f;
 
@@ -115,7 +118,7 @@ namespace RobotSNAP.Agents
 
             // An externally driven human owns no goal: the Python API commands its velocity, so the movement
             // step has to run even though nobody ever gave the agent a destination.
-            if (_avatar.hasDestination || IsExternallyControlled)
+            if (_avatar.hasDestination || IsExternallyControlled || IsReplayControlled)
                 Move();
         }
 
@@ -257,12 +260,26 @@ namespace RobotSNAP.Agents
         {
             switch (type)
             {
+                // Manual and External are the same controller: both own no goal and replay the last velocity
+                // they were handed. Only the hand that refreshes that velocity differs — a keyboard inside the
+                // application, or a driver on the other end of the connector — and the type is remembered so
+                // the snapshot can say which of the two is walking the agent.
                 case MovementControllerType.External:
+                case MovementControllerType.Manual:
                     _externalController = new ExternalControlController(_config);
                     _controller = _externalController;
+                    _recordedController = null;
+                    break;
+                // A replayed human owns no goal either: its recorded track says where it goes, and the
+                // controller steers the body back onto it. See RecordedTrajectoryController.
+                case MovementControllerType.Replay:
+                    _externalController = null;
+                    _recordedController = new RecordedTrajectoryController(_config);
+                    _controller = _recordedController;
                     break;
                 default: // SFM, and any value a scene still carries from an older build.
                     _externalController = null;
+                    _recordedController = null;
                     _controller = new SFMController(_config, _avatar);
                     break;
             }
@@ -294,6 +311,25 @@ namespace RobotSNAP.Agents
 
         /// <summary>True when the velocity of this human comes from outside Unity.</summary>
         public bool IsExternallyControlled => _externalController != null;
+
+        /// <summary>
+        /// Hands this human the recorded track of an episode, in the episode's own world seconds and world
+        /// XZ metres. It is ignored unless the agent is walking with the replay controller, which is the same
+        /// contract <see cref="SetExternalVelocity"/> keeps.
+        /// </summary>
+        public void SetRecordedTrack(IReadOnlyList<double[]> samples) => _recordedController?.SetTrack(samples);
+
+        /// <summary>True when this human repeats the recorded movement of an episode.</summary>
+        public bool IsReplayControlled => _currentControllerType == MovementControllerType.Replay;
+
+        /// <summary>The controller this human is walking with right now.</summary>
+        public MovementControllerType ControllerType => _currentControllerType;
+
+        /// <summary>
+        /// True when the velocity of this human comes from a keyboard inside the application, rather than
+        /// from the Python API, ROS2, or the social force model.
+        /// </summary>
+        public bool IsManuallyControlled => _currentControllerType == MovementControllerType.Manual;
 
         public void SetHumanManager(HumanManager manager)
         {
@@ -509,7 +545,8 @@ namespace RobotSNAP.Agents
 
             // Nothing to plan for an externally driven human: the controller ignores the goal, so planning
             // towards the authored route — or towards the (0,0) placeholder — would only burn grid searches.
-            if (IsExternallyControlled) return;
+            // A replayed human ignores its goal the same way: its route belongs to the recording.
+            if (IsExternallyControlled || IsReplayControlled) return;
 
             if (Time.time - _lastPathUpdate < _config.pathUpdateInterval) return;
             _lastPathUpdate = Time.time;
@@ -754,6 +791,7 @@ namespace RobotSNAP.Agents
             _plannedGoal = Vector2.zero;
             _scenarioPathInUse = false;
             _externalController?.ClearCommand();
+            _recordedController?.SetTrack(null);
             _neighborPositions.Clear();
             _neighborVelocities.Clear();
             _tempObstacles.Clear();
@@ -769,7 +807,7 @@ namespace RobotSNAP.Agents
         public void SetControllerType(int type)
         {
             MovementControllerType controllerType =
-                (MovementControllerType)Mathf.Clamp(type, 0, (int)MovementControllerType.External);
+                (MovementControllerType)Mathf.Clamp(type, 0, (int)MovementControllerType.Replay);
             if (_currentControllerType != controllerType)
                 SwitchController(controllerType);
         }

@@ -21,6 +21,10 @@
                         <ui:VisualElement class="menu-icon scenarios-icon" style="background-image: url(&quot;project://database/Assets/Resources/Icons/scenarios.png?fileID=2800000&amp;guid=2147e330b9e5341879d660a43c111aa8&amp;type=3#scenarios&quot;);"/>
                         <ui:Label text="Scenarios" class="menu-label" style="-unity-text-align: middle-left;"/>
                     </ui:Button>
+                    <ui:Button class="menu-item ">
+                        <ui:VisualElement class="menu-icon robots-icon" style="background-image: url(&quot;project://database/Assets/Resources/Icons/robot.png?fileID=2800000&amp;guid=1c7e06ffa410f48498919f0c92fdf7aa&amp;type=3#robot&quot;);"/>
+                        <ui:Label text="Robots" class="menu-label" style="-unity-text-align: middle-left;"/>
+                    </ui:Button>
                 </ui:VisualElement>
                 <ui:VisualElement name="Seperator2" class="separator"/>
                 <ui:VisualElement name="SettingsMenuGroup" class="menu-group">

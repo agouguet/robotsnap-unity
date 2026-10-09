@@ -111,7 +111,7 @@ namespace RobotSNAP.ROS
         private const string AcceptedControlModes = "keyboard, ros, hybrid, scenario";
 
         /// <summary>Movement controllers of the crowd, as this topic spells them.</summary>
-        private const string AcceptedAgentModes = "sfm, external";
+        private const string AcceptedAgentModes = "sfm, external, manual";
 
         /// <summary>Runs one command. Never throws: a malformed body comes back as Ok=false.</summary>
         public CommandResult Execute(string json)
@@ -772,6 +772,12 @@ namespace RobotSNAP.ROS
                 case "external":
                     controllerType = (int)MovementControllerType.External;
                     label = "external";
+                    break;
+                // A crowd under the manual controller is driven by the keyboard of the machine running the
+                // application; a driver that takes one pedestrian with the grab key overrides it for that one.
+                case "manual":
+                    controllerType = (int)MovementControllerType.Manual;
+                    label = "manual";
                     break;
                 default:
                     return new CommandResult(false, command,

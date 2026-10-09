@@ -15,10 +15,13 @@
                 <ui:VisualElement name="StatusAgentsIcon" class="status-chip-icon"/>
                 <ui:Label name="StatusAgentsLabel" text="0 agents" class="status-chip-label"/>
             </ui:VisualElement>
-            <ui:VisualElement name="StatusRos" class="status-chip">
+            <!-- The ROS chip is the bar's one clickable chip: pressing it hands the robot the view is on to
+                 ROS 2, and pressing it again takes that robot back to the scenario. The dot keeps saying
+                 whether the bridge is reachable; the chip itself lights up while its robot obeys ROS. -->
+            <ui:Button name="StatusRos" class="status-chip" tooltip="Click to hand the selected robot to ROS 2 control, or take it back to the scenario if ROS is already driving it. Acts on the robot the view follows, or on robot_1 when none is selected.">
                 <ui:VisualElement name="StatusRosDot" class="status-ros-dot"/>
-                <ui:Label name="StatusRosLabel" text="ROS 2" tooltip="ROS 2 bridge status" class="status-chip-label"/>
-            </ui:VisualElement>
+                <ui:Label name="StatusRosLabel" text="ROS 2" class="status-chip-label"/>
+            </ui:Button>
             <!-- Power glyph rather than the old "..." menu: the icon names what the button does. The image and
                  its tint are the ones of the other icons of the bar; the button asks the application to quit. -->
             <ui:Button name="QuitAppButton" tooltip="Quit RobotSNAP" class="app-menu-button button-icon" style="margin-right: 0;"/>

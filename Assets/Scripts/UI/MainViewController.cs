@@ -11,6 +11,7 @@ public class MainViewController : MonoBehaviour
     [SerializeField] private VisualTreeAsset simulatorTemplate;
     [SerializeField] private VisualTreeAsset analysisTemplate;
     [SerializeField] private VisualTreeAsset scenariosTemplate;
+    [SerializeField] private VisualTreeAsset robotsTemplate;
     [SerializeField] private VisualTreeAsset agentsTemplate;
     [SerializeField] private VisualTreeAsset recordingsTemplate;
     [SerializeField] private VisualTreeAsset settingsTemplate;
@@ -94,6 +95,11 @@ public class MainViewController : MonoBehaviour
             case "Simulator": return simulatorTemplate;
             case "Analysis": return analysisTemplate;
             case "Scenarios": return scenariosTemplate;
+            // No scene reference is wired for the Robots tab: it loads its own template from Resources so the
+            // page works without a scene edit, and a wired reference overrides it when the scene carries one.
+            case "Robots": return robotsTemplate != null
+                ? robotsTemplate
+                : Resources.Load<VisualTreeAsset>("UI/Tabs/Robots/RobotsTab");
             case "Agents": return agentsTemplate;
             case "Recordings": return recordingsTemplate;
             case "Settings": return settingsTemplate;

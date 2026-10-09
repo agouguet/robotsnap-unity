@@ -617,10 +617,15 @@ public sealed partial class ScenarioRouteEditor
 
     private static RouteDraft CreateHumanDraft(int index)
     {
+        // A route the author just drew carries agents. The count and the speed come from the model's own
+        // defaults, so the wizard cannot disagree with what HumanScenarioConfig documents: a draft born at
+        // zero used to be dropped on save, which is the route that disappeared.
+        var defaults = new HumanScenarioConfig();
         var draft = new RouteDraft
         {
             Id = $"Human route {index}",
-            Count = 0,
+            Count = defaults.Count,
+            Speed = defaults.Speed,
             RouteModified = true
         };
         AppendPoint(draft, new Vector2(2f, 0f));

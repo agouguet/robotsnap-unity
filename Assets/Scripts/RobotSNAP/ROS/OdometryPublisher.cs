@@ -247,7 +247,8 @@ namespace RobotSNAP.ROS
                 // Angular velocity in local frame
                 Vector3 angularVelocityWorld = robotRigidbody.angularVelocity;
                 Vector3 angularVelocityLocal = robotTransform.InverseTransformDirection(angularVelocityWorld);
-                _message.twist.twist.angular = Util.Geometry.GetGeometryVector3(angularVelocityLocal.To<FLU>());
+                _message.twist.twist.angular = Util.Geometry.GetGeometryVector3(
+                    Vector3<FLU>.FromUnityAngularVelocity(angularVelocityLocal));
             }
             else if (_robot != null)
             {
@@ -256,7 +257,8 @@ namespace RobotSNAP.ROS
 
                 Vector3 yawRateWorld = Vector3.up * _robot.AngularSpeed;
                 Vector3 angularVelocityLocal = robotTransform.InverseTransformDirection(yawRateWorld);
-                _message.twist.twist.angular = Util.Geometry.GetGeometryVector3(angularVelocityLocal.To<FLU>());
+                _message.twist.twist.angular = Util.Geometry.GetGeometryVector3(
+                    Vector3<FLU>.FromUnityAngularVelocity(angularVelocityLocal));
             }
             else
             {

@@ -37,6 +37,11 @@ public class ScenarioDataService : MonoBehaviour
 
     private void Start()
     {
+        // A session that starts is a session that has read nothing yet. The flag otherwise survives from the
+        // previous one, when the Editor is set not to reload the domain or the scene: a service that still
+        // believes it is loaded never looks at the YAML that was written in between.
+        _isLoaded = false;
+
         if (_scenarioManager != null && _scenarioManager.Loader != null)
         {
             _scenarioManager.OnScenarioLoaded += OnScenarioLoadedByManager;
@@ -89,6 +94,11 @@ public class ScenarioDataService : MonoBehaviour
     /// </summary>
     public void ReloadAllScenarioInfos()
     {
+        // A reload is what the Editor asks for after a scenario file was rewritten. The loader's cache
+        // outlives a Play session when the domain and the scene are not reloaded, so it is dropped here:
+        // this is what makes the YAML on disk what the list and the next load describe.
+        _scenarioManager?.Loader?.ClearScenarioCache();
+
         _scenarioDictionary.Clear();
 
         if (_useDebugData)

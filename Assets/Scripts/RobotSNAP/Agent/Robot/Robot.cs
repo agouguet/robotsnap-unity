@@ -305,7 +305,11 @@ namespace RobotSNAP.Agents
             if (distance < 1.0f)
                 targetSpeed = _currentSpeed * (distance / 1.0f);
 
-            float angleToGoal = Vector3.SignedAngle(Forward, direction, Vector3.up);
+            // SignedAngle repond dans le sens d'Unity : positif quand le but est a droite, c'est-a-dire
+            // quand le lacet Unity doit augmenter. La consigne de vitesse angulaire des conduites est en
+            // convention ROS, positive vers la gauche, donc le signe se retourne ici. Sans cela le robot
+            // s'eloigne du but qu'il doit rejoindre.
+            float angleToGoal = -Vector3.SignedAngle(Forward, direction, Vector3.up);
             float angularSpeed = Mathf.Clamp(angleToGoal * 2.0f, -maxAngularSpeed, maxAngularSpeed);
 
             SetVelocity(targetSpeed, angularSpeed);

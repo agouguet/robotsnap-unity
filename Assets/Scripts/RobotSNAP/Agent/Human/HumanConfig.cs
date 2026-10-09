@@ -26,7 +26,7 @@ namespace RobotSNAP.Agents
 
         // ==================== CONTROLLER SELECTION ====================
         [Header("Controller Selection")]
-        [Tooltip("Type de contrôleur utilisé : SFM ou External")]
+        [Tooltip("Type de contrôleur utilisé : SFM, External, Manual ou Replay")]
         public MovementControllerType controllerType = MovementControllerType.SFM;
 
         // ==================== SFM PARAMETERS ====================
@@ -171,6 +171,8 @@ namespace RobotSNAP.Agents
     public enum MovementControllerType
     {
         SFM = 0,       // Social Force Model
-        External = 1   // vitesse commandée depuis l'extérieur (API Python)
+        External = 1,  // vitesse commandée depuis l'extérieur (API Python, ROS2)
+        Manual = 2,    // vitesse commandée au clavier, depuis la vue de simulation
+        Replay = 3     // suit la trajectoire enregistrée d'un épisode (rejeu de scénario)
     }
 }

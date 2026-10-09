@@ -317,5 +317,146 @@ namespace RobotSNAP.Tests.Editor
             Assert.That(editor.RobotRouteCount, Is.EqualTo(1),
                 "A scenario with no robot is not a scenario this application can run.");
         }
+
+        /// <summary>
+        /// A crowd route the author drew carries agents with no further tuning: what "add a route" lays down is
+        /// what the scenario holds after the save, instead of a route that vanishes from the file.
+        /// </summary>
+        [Test]
+        public void A_drawn_human_route_survives_the_save()
+        {
+            ScenarioRouteEditor editor = BuildEditor();
+            editor.Reset();
+            editor.AddHumanRoute();
+
+            var saved = new ScenarioData { Info = new ScenarioInfo { Name = "Crowd" } };
+            editor.WriteToScenario(saved);
+
+            Assert.That(saved.Humans, Has.Count.EqualTo(1),
+                "The route the author drew has to reach the file, not vanish on save.");
+            var defaults = new HumanScenarioConfig();
+            Assert.That(saved.Humans[0].Count, Is.EqualTo(defaults.Count),
+                "The route is born with the crowd the model documents, not an empty one.");
+            Assert.That(saved.Humans[0].Speed, Is.EqualTo(defaults.Speed).Within(0.001f),
+                "Its walking speed is the model's own default.");
+        }
+
+        /// <summary>
+        /// The same shape once its count is fixed by hand: this separates "the draft is born with a count of
+        /// zero" from a wider writing defect, because a route that carries an explicit count already has
+        /// something the writer accepts.
+        ///
+        /// An edit-mode tree carries no panel, so a field cannot be typed into here; the route is taken from a
+        /// scenario that already fixes the count and the speed, which is the state an author's edit leaves the
+        /// draft in.
+        /// </summary>
+        [Test]
+        public void AHumanRouteAddedWithAnExplicitCountSurvives()
+        {
+            var scenario = new ScenarioData
+            {
+                Info = new ScenarioInfo { Name = "Explicit crowd" },
+                Points = new Dictionary<string, RefPoint>
+                {
+                    ["robot_1_start"] = new RefPoint { X = 0f, Y = 0f, Z = 5f },
+                    ["robot_1_goal"] = new RefPoint { X = 0f, Y = 0f, Z = -5f },
+                    ["crowd_start"] = new RefPoint { X = -5f, Y = 0f, Z = 0f }
+                },
+                Robots = new List<RobotScenarioConfig>
+                {
+                    new RobotScenarioConfig
+                    {
+                        Id = "robot_1",
+                        Type = "jackal",
+                        StartRef = "robot_1_start",
+                        GoalRef = "robot_1_goal",
+                        Speed = 2f
+                    }
+                },
+                Humans = new List<HumanScenarioConfig>
+                {
+                    new HumanScenarioConfig
+                    {
+                        Id = "crowd",
+                        Count = 3,
+                        Speed = 1.1f,
+                        Spawn = new SpawnConfig { Type = "point", Reference = "crowd_start" },
+                        Goal = new GoalConfig
+                        {
+                            Type = "point",
+                            Position = Point.FromVector3(new Vector3(5f, 0f, 0f))
+                        }
+                    }
+                }
+            };
+
+            ScenarioRouteEditor editor = BuildEditor();
+            editor.Load(scenario);
+
+            var saved = new ScenarioData { Info = new ScenarioInfo { Name = "Crowd" } };
+            editor.WriteToScenario(saved);
+
+            Assert.That(saved.Humans, Has.Count.EqualTo(1),
+                "A route with an explicit count has to survive the save.");
+            Assert.That(saved.Humans[0].Count, Is.EqualTo(3));
+            Assert.That(saved.Humans[0].Speed, Is.EqualTo(1.1f).Within(0.001f));
+        }
+
+        /// <summary>
+        /// A route the author left at a count of zero has nothing to write. The writer names it and the reason
+        /// instead of dropping it in silence, which is what lets the save stop rather than lose the drawing.
+        /// </summary>
+        [Test]
+        public void A_drawn_route_with_no_agents_is_reported_not_dropped()
+        {
+            var scenario = new ScenarioData
+            {
+                Info = new ScenarioInfo { Name = "Empty crowd" },
+                Points = new Dictionary<string, RefPoint>
+                {
+                    ["robot_1_start"] = new RefPoint { X = 0f, Y = 0f, Z = 5f },
+                    ["robot_1_goal"] = new RefPoint { X = 0f, Y = 0f, Z = -5f },
+                    ["crowd_start"] = new RefPoint { X = -5f, Y = 0f, Z = 0f }
+                },
+                Robots = new List<RobotScenarioConfig>
+                {
+                    new RobotScenarioConfig
+                    {
+                        Id = "robot_1",
+                        Type = "jackal",
+                        StartRef = "robot_1_start",
+                        GoalRef = "robot_1_goal",
+                        Speed = 2f
+                    }
+                },
+                Humans = new List<HumanScenarioConfig>
+                {
+                    new HumanScenarioConfig
+                    {
+                        Id = "crowd",
+                        Count = 0,
+                        Speed = 1f,
+                        Spawn = new SpawnConfig { Type = "point", Reference = "crowd_start" },
+                        Goal = new GoalConfig
+                        {
+                            Type = "point",
+                            Position = Point.FromVector3(new Vector3(5f, 0f, 0f))
+                        }
+                    }
+                }
+            };
+
+            ScenarioRouteEditor editor = BuildEditor();
+            editor.Load(scenario);
+
+            var saved = new ScenarioData { Info = new ScenarioInfo { Name = "Empty crowd" } };
+            IReadOnlyList<string> skipped = editor.WriteToScenario(saved);
+
+            Assert.That(saved.Humans, Is.Empty, "A route with no agent has nothing to write.");
+            Assert.That(skipped, Has.Count.EqualTo(1),
+                "The route the writer left out has to be named, not dropped in silence.");
+            Assert.That(skipped[0], Does.Contain("crowd"));
+            Assert.That(skipped[0], Does.Contain("count 0"));
+        }
     }
 }

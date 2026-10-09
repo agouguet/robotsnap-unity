@@ -184,7 +184,8 @@ public sealed partial class ScenarioRouteEditor
     {
         InheritControllerChoice,
         HumanMovementControllerParser.ToDisplayName(MovementControllerType.SFM),
-        HumanMovementControllerParser.ToDisplayName(MovementControllerType.External)
+        HumanMovementControllerParser.ToDisplayName(MovementControllerType.External),
+        HumanMovementControllerParser.ToDisplayName(MovementControllerType.Manual)
     };
 
     private static readonly string[] FormationChoices =

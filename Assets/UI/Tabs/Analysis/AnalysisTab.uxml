@@ -9,6 +9,7 @@
             </ui:VisualElement>
             <ui:VisualElement class="analysis-header-actions">
                 <ui:Label name="AnalysisExportStatus" text="" class="analysis-export-status"/>
+                <ui:Button name="AnalysisReplayEpisodeButton" text="Replay episode" class="analysis-folder-button"/>
                 <ui:Button name="AnalysisOpenFolderButton" text="Open folder" class="analysis-folder-button"/>
             </ui:VisualElement>
         </ui:VisualElement>

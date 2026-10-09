@@ -150,6 +150,19 @@ namespace RobotSNAP
         {
             PerformDetectionCheck();
         }
+
+        /// <summary>
+        /// Sets the radius, in metres, within which the detector looks for agents.
+        ///
+        /// The value the prefab ships with is read from the component; this is what lets a tuning laid over a
+        /// robot type reach a robot that is already in the scene - the detector holds its own radius and no
+        /// profile carries it. It takes effect on the next check, so a reader who saves sees the new radius
+        /// without a reload.
+        /// </summary>
+        public void ApplyDetectionRadius(float metres)
+        {
+            radius = Mathf.Max(0f, metres);
+        }
         
         /// <summary>
         /// Get the distance to an agent

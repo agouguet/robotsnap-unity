@@ -1,11 +1,13 @@
 scenario_info:
   name: default
   type: Custom
-  description: 'Goal navigation for a training loop'
+  description: 'A robot crossing a crowd, written from Python'
   version: '1.0'
   author: RobotSNAP
-  created: '2026-10-05 11:38'
-  tags: []
+  created: '2026-10-08 14:19'
+  tags:
+    - Python
+    - Demo
   map: basic/crowd
   location: ''
   dataset: null
@@ -34,11 +36,11 @@ robots:
     goal: robot_1_goal
     waypoints: null
     behavior: normal
-    speed: 1.5
+    speed: 1.0
 robot: null
 humans:
   - id: pedestrians
-    count: 4
+    count: 5
     spawn_window: 0.0
     spawn:
       type: random

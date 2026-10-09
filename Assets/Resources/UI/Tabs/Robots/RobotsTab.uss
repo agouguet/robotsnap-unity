@@ -1,0 +1,298 @@
+/* ================================================================
+   ROBOTS PAGE
+   Three columns: the catalogue of robot types on the left, a 3D
+   preview of the selected type in the middle, and the figures a
+   reader may change on the right.
+
+   The page is a fixed-height layout - the window it was opened in is
+   the whole of it. Only the two side columns scroll.
+   ================================================================ */
+
+.robots-page {
+    flex-grow: 1;
+    flex-direction: column;
+    min-height: 0;
+    background-color: var(--bg-primary);
+    padding: 20px 24px 18px 24px;
+}
+
+/* ---- header -------------------------------------------------- */
+
+.robots-header {
+    flex-direction: column;
+    flex-shrink: 0;
+    margin-bottom: 14px;
+}
+
+.robots-page-title {
+    font-size: 24px;
+    -unity-font-style: bold;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+}
+
+.robots-page-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* ---- columns ------------------------------------------------- */
+
+.robots-content {
+    flex-direction: row;
+    flex-grow: 1;
+    min-height: 0;
+}
+
+.robots-list-column {
+    width: 220px;
+    flex-direction: column;
+    flex-shrink: 0;
+    margin-right: 16px;
+    min-height: 0;
+}
+
+.robots-preview-column {
+    flex-grow: 1;
+    flex-direction: column;
+    flex-shrink: 1;
+    margin-right: 16px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.robots-parameters-column {
+    width: 340px;
+    flex-shrink: 0;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.robots-column-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+/* ---- the robots list ----------------------------------------- */
+
+.robots-list-scroll {
+    flex-grow: 1;
+    min-height: 0;
+    background-color: var(--card-bg);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: var(--border-color);
+    border-right-color: var(--border-color);
+    border-top-color: var(--border-color);
+    border-bottom-color: var(--border-color);
+}
+
+.robots-list-host {
+    flex-direction: column;
+    padding: 6px;
+}
+
+.robots-list-item {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+    margin-bottom: 4px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background-color: transparent;
+    border-width: 0;
+    -unity-text-align: middle-left;
+}
+
+.robots-list-item:hover {
+    background-color: rgba(128, 128, 128, 0.18);
+}
+
+.robots-list-item.is-selected {
+    background-color: var(--accent);
+}
+
+.robots-list-id {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: var(--text-primary);
+}
+
+.robots-list-type {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.robots-list-item.is-selected .robots-list-id,
+.robots-list-item.is-selected .robots-list-type {
+    color: rgb(255, 255, 255);
+}
+
+.robots-list-empty {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    white-space: normal;
+}
+
+/* ---- the 3D preview ------------------------------------------ */
+
+.robots-preview-container {
+    flex-grow: 1;
+    min-height: 0;
+    background-color: rgb(12, 16, 24);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: var(--border-color);
+    border-right-color: var(--border-color);
+    border-top-color: var(--border-color);
+    border-bottom-color: var(--border-color);
+}
+
+.robots-preview-name {
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+    padding: 2px 6px;
+    background-color: rgba(0, 0, 0, 0.45);
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+/* ---- the parameters ------------------------------------------ */
+
+.robots-fields {
+    flex-direction: column;
+    flex-shrink: 0;
+    background-color: var(--card-bg);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: var(--border-color);
+    border-right-color: var(--border-color);
+    border-top-color: var(--border-color);
+    border-bottom-color: var(--border-color);
+    padding: 4px 12px;
+}
+
+.robots-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.robots-row--divided {
+    border-top-width: 1px;
+    border-top-color: var(--border-color);
+}
+
+.robots-row-label {
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-right: 12px;
+}
+
+.robots-field-label {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.robots-field-detail {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: normal;
+}
+
+.robots-row-control {
+    flex-shrink: 0;
+    width: 110px;
+}
+
+.robots-number-field {
+    width: 110px;
+}
+
+/* ---- the actions --------------------------------------------- */
+
+.robots-actions-row {
+    flex-direction: row;
+    justify-content: flex-end;
+    flex-shrink: 0;
+    margin-top: 12px;
+}
+
+.robots-button {
+    height: 30px;
+    padding-left: 14px;
+    padding-right: 14px;
+    margin-left: 8px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: var(--border-color);
+    border-right-color: var(--border-color);
+    border-top-color: var(--border-color);
+    border-bottom-color: var(--border-color);
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.robots-button-accent {
+    background-color: var(--accent);
+    border-left-color: var(--accent);
+    border-right-color: var(--accent);
+    border-top-color: var(--accent);
+    border-bottom-color: var(--accent);
+    color: rgb(255, 255, 255);
+}
+
+.robots-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    white-space: normal;
+    flex-shrink: 0;
+}
+
+.robots-hint {
+    font-size: 11px;
+    color: var(--text-secondary-muted);
+    margin-top: 4px;
+    white-space: normal;
+    flex-shrink: 0;
+}

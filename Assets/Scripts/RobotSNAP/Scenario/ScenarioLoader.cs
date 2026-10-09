@@ -93,6 +93,10 @@ namespace RobotSNAP.Core.Scenario
                 Application.streamingAssetsPath,
                 config.ScenariosFolder,
                 config.DatasetPath);
+
+            if (ScenarioPathResolver.TryResolveScenariosOverride(out string overridePath))
+                Debug.Log($"[ScenarioLoader] {ScenarioPathResolver.ScenariosDirectoryOverrideVariable} redirects the scenarios folder to: {overridePath}");
+
             Debug.Log($"[ScenarioLoader] Scenarios path set to: {_scenariosPath}");
 
             EnsureDirectoriesExist();
@@ -180,15 +184,9 @@ namespace RobotSNAP.Core.Scenario
                 RefreshPathsFromConfig();
                 // return null;
             }
-            
-            // Vérifier le cache
-            if (_enableCaching && _scenarioRepository.TryGetScenario(scenarioName, out var cached))
-            {
-                if (_logEvents) Debug.Log($"[ScenarioLoader] Returning cached scenario: {scenarioName}");
-                return cached;
-            }
-            
-            // Trouver le fichier
+
+            // Le fichier est cherché avant le cache : le cache doit pouvoir comparer son entrée à la
+            // révision qui est sur le disque, et une entrée plus ancienne est ignorée.
             string filePath = FindScenarioFile(scenarioName);
             if (filePath == null)
             {
@@ -197,6 +195,14 @@ namespace RobotSNAP.Core.Scenario
                 Debug.LogError($"[ScenarioLoader] {error}");
                 return null;
             }
+
+            // Vérifier le cache, pour ce fichier précis
+            if (_enableCaching && _scenarioRepository.TryGetScenario(scenarioName, filePath, out var cached))
+            {
+                if (_logEvents) Debug.Log($"[ScenarioLoader] Returning cached scenario: {scenarioName}");
+                return cached;
+            }
+
             Debug.Log($"[ScenarioLoader] Found scenario file: {filePath}");
             try
             {
@@ -236,8 +242,8 @@ namespace RobotSNAP.Core.Scenario
             
             string scenarioName = Path.GetFileNameWithoutExtension(filePath);
             
-            // Vérifier le cache
-            if (_enableCaching && _scenarioRepository.TryGetScenario(scenarioName, out var cached))
+            // Vérifier le cache, pour ce fichier précis : une réécriture du YAML le rend caduc.
+            if (_enableCaching && _scenarioRepository.TryGetScenario(scenarioName, filePath, out var cached))
             {
                 return cached;
             }

@@ -111,6 +111,18 @@ namespace RobotSNAP.Agents
         public bool IsExternallyControlled => _movement != null && _movement.IsExternallyControlled;
 
         /// <summary>
+        /// True when the velocity of this human comes from a keyboard inside the application, rather than
+        /// from the Python API, ROS2, or the social force model.
+        /// </summary>
+        public bool IsManuallyControlled => _movement != null && _movement.IsManuallyControlled;
+
+        /// <summary>
+        /// True when this human repeats the recorded movement of an episode, rather than walking a route the
+        /// social force model steers it along.
+        /// </summary>
+        public bool IsReplayControlled => _movement != null && _movement.IsReplayControlled;
+
+        /// <summary>
         /// Drives the human from outside Unity, in world units per second, in the X/Z plane. The command has to
         /// be refreshed at the rate of the external loop: it expires after a second without an update, so a
         /// bridge that stops leaves the crowd standing instead of walking on its own.
@@ -119,6 +131,12 @@ namespace RobotSNAP.Agents
 
         /// <summary>Stops the human and forgets the last external command.</summary>
         public void ClearExternalVelocity() => _movement?.ClearExternalVelocity();
+
+        /// <summary>
+        /// Hands the recorded track of an episode to a human that walks with the replay controller, in the
+        /// episode's own world seconds and world XZ metres.
+        /// </summary>
+        public void SetRecordedTrack(IReadOnlyList<double[]> samples) => _movement?.SetRecordedTrack(samples);
 
         /// <summary>Lateral offset added to its slot while the member yields; zero otherwise.</summary>
         public Vector2 YieldOffset => IsYielding ? _yieldOffset : Vector2.zero;
@@ -340,7 +358,8 @@ namespace RobotSNAP.Agents
         {
             // An externally driven human is not walking its authored route: the Python API owns its motion, so
             // the route must not advance underneath it (nor trigger its end behaviour on its own).
-            if (!_followingRoute || !hasDestination || IsExternallyControlled)
+            // A replayed human is in the same position: its route belongs to the recording.
+            if (!_followingRoute || !hasDestination || IsExternallyControlled || IsReplayControlled)
                 return;
 
             float arrivalRadius = ArrivalRadius;

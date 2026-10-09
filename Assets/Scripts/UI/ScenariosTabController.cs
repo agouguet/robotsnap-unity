@@ -728,7 +728,14 @@ public class ScenariosTabController : MonoBehaviour
             SetFeedback(coverError);
             return;
         }
-        ScenarioData scenario = BuildScenario();
+        ScenarioData scenario = BuildScenario(out IReadOnlyList<string> skippedRoutes);
+        // A drawn route the author left with no agent cannot be written, so the save stops and says so: the
+        // route stays on screen with the rest of the work instead of vanishing from the file without a word.
+        if (skippedRoutes.Count > 0)
+        {
+            SetFeedback($"Nothing was saved: {string.Join("; ", skippedRoutes)}. Set a count or remove the route.");
+            return;
+        }
         if (!scenario.IsValid(out string validationError))
         {
             SetFeedback($"The scenario is invalid: {validationError}");
@@ -750,7 +757,7 @@ public class ScenariosTabController : MonoBehaviour
         ShowBrowser();
     }
 
-    private ScenarioData BuildScenario()
+    private ScenarioData BuildScenario(out IReadOnlyList<string> skippedRoutes)
     {
         ScenarioData scenario = _editingScenario ?? new ScenarioData();
         scenario.Info ??= new ScenarioInfo();
@@ -767,7 +774,7 @@ public class ScenariosTabController : MonoBehaviour
         scenario.Info.MapImage = _mapDropdown.value;
         scenario.Info.PreviewImage = IsPlaceholder(_previewDropdown.value, PreviewPlaceholder) ? string.Empty : _previewDropdown.value;
         scenario.Info.Duration = Mathf.Max(0f, _durationField.value);
-        _routeEditor.WriteToScenario(scenario);
+        skippedRoutes = _routeEditor.WriteToScenario(scenario);
         // The label the browser shows is the kind of robot this scenario drives. With several of them the
         // first one speaks for the scenario, which is also the one a single-robot client reaches.
         scenario.Info.RobotType = _routeEditor.PrimaryRobotTypeName;
